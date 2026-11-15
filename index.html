@@ -136,6 +136,15 @@ th{color:var(--tenue);font-weight:500}
     <label class="campo" for="metaVal">Valor de la meta<input id="metaVal" type="number" min="1" step="1" value="20" inputmode="numeric"></label>
     <label class="campo" for="zMedio">Ritmo medio desde<input id="zMedio" type="number" min="60" max="220" step="5" value="135" inputmode="numeric"></label>
     <label class="campo" for="zRapido">Ritmo rápido desde<input id="zRapido" type="number" min="60" max="240" step="5" value="155" inputmode="numeric"></label>
+    <label class="campo" for="voz">Avisos por voz
+      <select id="voz"><option value="1" selected>Activados</option><option value="0">Desactivados</option></select>
+    </label>
+    <label class="campo" for="vozMin">Resumen cada (min)<input id="vozMin" type="number" min="1" max="60" step="1" value="7" inputmode="numeric"></label>
+    <label class="campo" for="vozZona">Avisar cambio de zona
+      <select id="vozZona"><option value="1" selected>Sí</option><option value="0">No</option></select>
+    </label>
+    <label class="campo" for="vozBaja">Avisar si la cadencia baja de<input id="vozBaja" type="number" min="0" max="200" step="5" value="120" inputmode="numeric"></label>
+    <button id="btnVozPrueba" class="chico" type="button" style="margin-top:10px;width:100%">Probar la voz</button>
     <label class="campo" for="eje">Eje del sensor
       <select id="eje"><option value="x" selected>X</option><option value="y">Y</option><option value="z">Z</option></select>
     </label>
@@ -171,7 +180,7 @@ th{color:var(--tenue);font-weight:500}
   function guardar(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
 
   var cfg = leer("eliptica_cfg", {});
-  ["peso","resist","largo","metaTipo","metaVal","zMedio","zRapido","eje","sens"].forEach(function(id){
+  ["peso","resist","largo","metaTipo","metaVal","zMedio","zRapido","voz","vozMin","vozZona","vozBaja","eje","sens"].forEach(function(id){
     if (cfg[id] !== undefined) $(id).value = cfg[id];
     $(id).addEventListener("change", function(){ cfg[id] = $(id).value; guardar("eliptica_cfg", cfg); });
   });
@@ -196,7 +205,61 @@ th{color:var(--tenue);font-weight:500}
       cadMax: 0, zonas: [0,0,0], serie: [], sigSerie: CADA_SERIE,
       pausas: 0, enPausa: false,
       ints: [], intSum: 0, intN: 0, regSum: 0, regN: 0,
-      fcSum: 0, fcN: 0, fcMax: 0, metaHecha: false };
+      fcSum: 0, fcN: 0, fcMax: 0, metaHecha: false,
+      vozSig: 0, zonaVoz: -1, zonaCand: -1, zonaDesde: 0, ultAvisoZona: -99, bajaDesde: null, bajaAvisada: false };
+  }
+
+  // ---------- avisos por voz (voz del propio móvil) ----------
+  var vozEs = null;
+  function elegirVoz(){
+    try{
+      var vs = window.speechSynthesis.getVoices() || [];
+      vozEs = vs.filter(function(v){ return /^es[-_](PE|419|US|MX)/i.test(v.lang); })[0] ||
+              vs.filter(function(v){ return /^es/i.test(v.lang); })[0] || null;
+    }catch(e){}
+  }
+  if (window.speechSynthesis){ elegirVoz(); try{ window.speechSynthesis.onvoiceschanged = elegirVoz; }catch(e){} }
+  function decir(txt, forzar){
+    if (!forzar && $("voz").value !== "1") return;
+    try{
+      if (!window.speechSynthesis) return;
+      var u = new SpeechSynthesisUtterance(txt);
+      u.lang = vozEs ? vozEs.lang : "es-ES"; if (vozEs) u.voice = vozEs;
+      u.rate = 1; u.volume = 1;
+      window.speechSynthesis.speak(u);
+    }catch(e){}
+  }
+  var NOMBRE_ZONA = ["Zona suave", "Zona media", "Zona rápida"];
+  function zonaDe(c){ return c >= num("zRapido",155) ? 2 : c >= num("zMedio",135) ? 1 : 0; }
+
+  // Se llama en cada refresco de pantalla mientras la sesión corre
+  function avisosVoz(s, c, activo){
+    // 1) resumen cada N minutos de tiempo activo
+    var cada = Math.max(1, num("vozMin",7)) * 60;
+    if (s.vozSig === 0) s.vozSig = cada;
+    if (s.activo >= s.vozSig){
+      var min = Math.round(s.vozSig/60);
+      decir(min + (min === 1 ? " minuto. " : " minutos. ") + "Cadencia " + Math.round(c || cadMedia(s)) + ". " + Math.round(s.kcal) + " calorías.");
+      s.vozSig += cada;
+    }
+    if (!activo || c <= 0){ s.zonaCand = -1; s.bajaDesde = null; return; }
+    // 2) cambio de zona: solo si la nueva zona se mantiene 10 s y han pasado 30 s del último aviso
+    if ($("vozZona").value === "1"){
+      var z = zonaDe(c);
+      if (z !== s.zonaCand){ s.zonaCand = z; s.zonaDesde = s.activo; }
+      if (s.zonaVoz === -1 && s.activo - s.zonaDesde >= 10){ s.zonaVoz = z; }
+      else if (z !== s.zonaVoz && s.zonaVoz !== -1 && s.activo - s.zonaDesde >= 10 && s.activo - s.ultAvisoZona >= 30){
+        s.zonaVoz = z; s.ultAvisoZona = s.activo; decir(NOMBRE_ZONA[z]);
+      }
+    }
+    // 3) cadencia baja: 15 s seguidos por debajo del límite; se rearma al volver a subir
+    var lim = num("vozBaja",0);
+    if (lim > 0){
+      if (c < lim){
+        if (s.bajaDesde === null) s.bajaDesde = s.activo;
+        if (!s.bajaAvisada && s.activo - s.bajaDesde >= 15){ s.bajaAvisada = true; decir("Cadencia baja. " + Math.round(c)); }
+      } else if (c >= lim + 5){ s.bajaDesde = null; s.bajaAvisada = false; }
+    }
   }
 
   function cadencia(){
@@ -375,10 +438,11 @@ th{color:var(--tenue);font-weight:500}
         $("metaTxt").textContent = m.txt; $("metaPct").textContent = Math.round(m.pct*100) + " %";
         $("metaBarra").firstElementChild.style.width = (m.pct*100) + "%";
         $("metaBarra").className = "barra" + (m.pct >= 1 ? " hecha" : "");
-        if (m.pct >= 1 && !s.metaHecha && s.corriendo){ s.metaHecha = true; pitido(); }
+        if (m.pct >= 1 && !s.metaHecha && s.corriendo){ s.metaHecha = true; pitido(); decir("Meta cumplida."); }
       }
 
       if (s.corriendo){
+        if (s.eventos > 0) avisosVoz(s, c, s.t - s.ultPaso < PARADA && s.pasos > 0);
         while (tot >= s.sigSerie){ s.serie.push(Math.round(c)); s.sigSerie += CADA_SERIE; if (s.serie.length > 1440) s.serie.shift(); }
         if (s.eventos === 0 && tot > 3){
           estado("Sin sensor","error");
@@ -457,6 +521,8 @@ th{color:var(--tenue);font-weight:500}
     window.addEventListener("devicemotion", alMover);
     mantenerPantalla();
     try{ if (!audio){ var AC = window.AudioContext || window.webkitAudioContext; if (AC) audio = new AC(); } }catch(e){}
+    try{ if (window.speechSynthesis) window.speechSynthesis.cancel(); }catch(e){}
+    decir("Sesión iniciada.");   // la primera frase debe salir de un toque en pantalla para que el móvil permita la voz
     estado("Esperando movimiento","pausa");
     $("btnIniciar").textContent = "Reiniciar";
     $("btnTerminar").disabled = false;
@@ -485,6 +551,7 @@ th{color:var(--tenue);font-weight:500}
       if (S.fcN){ reg.fcMed = Math.round(S.fcSum/S.fcN); reg.fcMax = S.fcMax; }
       var h = historial();
       pintarResumen(reg, h);
+      decir("Sesión terminada. " + Math.floor(reg.seg/60) + " minutos, " + reg.pasos + " zancadas, cadencia media " + reg.cad + ", " + reg.kcal + " calorías.");
       h.push(reg); guardar("eliptica_hist", h);
       pintarHistorial();
       estado("Sesión guardada","activo");
@@ -502,6 +569,11 @@ th{color:var(--tenue);font-weight:500}
     var a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], {type:"text/csv"}));
     a.download = "eliptica_historial.csv"; document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  $("btnVozPrueba").addEventListener("click", function(){
+    if (!window.speechSynthesis){ $("btnVozPrueba").textContent = "Este navegador no tiene voz"; return; }
+    decir("7 minutos. Cadencia 142. 95 calorías.", true);
   });
 
   var confirmarBorrado = false;
