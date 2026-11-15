@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contador Elíptica Monark</title>
+<style>
+/* Layout: una columna para móvil en vertical; cadencia grande arriba, rejilla de 3 columnas con los datos,
+   luego meta, zonas y gráfico de la sesión; ajustes e historial plegados al final. */
+:root{
+  --fondo:#101418; --panel:#1a2026; --linea:#2c353e;
+  --texto:#e9eef2; --tenue:#8d9aa6;
+  --acento:#f2b23a; --ok:#58c98b; --alerta:#ef6b5e; --frio:#5fa8e0;
+  --num:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --cuerpo:"Barlow","Segoe UI",Roboto,Arial,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--fondo);color:var(--texto);font-family:var(--cuerpo);font-size:16px;line-height:1.4}
+main{max-width:480px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:12px;min-height:100%}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+h1{font-family:var(--num);font-weight:600;font-size:20px;letter-spacing:.06em;text-transform:uppercase;margin:0}
+h2{font-size:13px;color:var(--tenue);text-transform:uppercase;letter-spacing:.08em;font-weight:500;margin:0 0 8px}
+.estado{font-size:13px;padding:4px 10px;border-radius:999px;border:1px solid var(--linea);color:var(--tenue);white-space:nowrap}
+.estado.activo{color:var(--ok);border-color:var(--ok)}
+.estado.pausa{color:var(--acento);border-color:var(--acento)}
+.estado.error{color:var(--alerta);border-color:var(--alerta)}
+.panel{background:var(--panel);border:1px solid var(--linea);border-radius:12px;padding:12px 14px}
+.cadencia{text-align:center;padding-bottom:8px}
+.cadencia .valor{font-family:var(--num);font-weight:600;font-size:104px;line-height:1;color:var(--acento);font-variant-numeric:tabular-nums}
+.etq{font-size:11px;color:var(--tenue);text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+canvas{display:block;width:100%}
+#graf{height:48px;margin-top:6px}
+#serie{height:110px}
+.rejilla{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.dato{background:var(--panel);border:1px solid var(--linea);border-radius:10px;padding:8px 10px;min-width:0}
+.dato .valor{font-family:var(--num);font-weight:600;font-size:32px;line-height:1.1;font-variant-numeric:tabular-nums}
+.dato small{display:block;color:var(--tenue);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:15px}
+.botones{display:flex;gap:10px}
+button{font-family:var(--cuerpo);font-size:17px;font-weight:600;border-radius:12px;border:1px solid var(--linea);background:var(--panel);color:var(--texto);padding:13px;flex:1;cursor:pointer}
+button.principal{background:var(--acento);color:#1b1405;border-color:var(--acento)}
+button.chico{font-size:14px;padding:9px;font-weight:500}
+button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--acento);outline-offset:2px}
+button:disabled{opacity:.45}
+.aviso{background:#2a1a18;border:1px solid var(--alerta);color:#ffd9d4;border-radius:12px;padding:10px 14px;font-size:14px}
+[hidden]{display:none!important}
+.barra{height:10px;background:var(--fondo);border-radius:999px;overflow:hidden;border:1px solid var(--linea)}
+.barra i{display:block;height:100%;width:0;background:var(--acento);border-radius:999px}
+.barra.hecha i{background:var(--ok)}
+.fila{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:14px;margin-bottom:6px;font-variant-numeric:tabular-nums}
+.zona{display:grid;grid-template-columns:64px 1fr 48px;gap:8px;align-items:center;font-size:14px;margin-top:6px;font-variant-numeric:tabular-nums}
+.zona span:last-child{text-align:right}
+.zona .barra i{background:var(--frio)}
+.zona.z1 .barra i{background:var(--acento)}
+.zona.z2 .barra i{background:var(--alerta)}
+details{background:var(--panel);border:1px solid var(--linea);border-radius:12px;padding:10px 14px}
+summary{cursor:pointer;font-weight:600}
+.campo{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:10px;font-size:15px}
+select,input{font:inherit;background:var(--fondo);color:var(--texto);border:1px solid var(--linea);border-radius:8px;padding:6px 8px;width:130px}
+.tabla{overflow-x:auto}
+table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:5px 4px;border-bottom:1px solid var(--linea);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--tenue);font-weight:500}
+.nota{color:var(--tenue);font-size:13px;margin:8px 0 0}
+.sube{color:var(--ok)} .baja{color:var(--alerta)}
+.record{font-size:11px;color:#1b1405;background:var(--acento);border-radius:999px;padding:1px 7px;margin-left:6px;font-weight:600}
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600&display=swap" rel="stylesheet">
+</head>
+<body>
+<main>
+  <header>
+    <h1>Elíptica Monark</h1>
+    <span id="estado" class="estado">Listo</span>
+  </header>
+
+  <div id="aviso" class="aviso" hidden></div>
+
+  <section class="panel cadencia">
+    <div class="etq">Cadencia · zancadas por minuto</div>
+    <div id="cad" class="valor">0</div>
+    <canvas id="graf" width="448" height="48" aria-label="Señal del sensor"></canvas>
+  </section>
+
+  <section class="rejilla">
+    <div class="dato"><div class="etq">Activo</div><div id="tiempo" class="valor">00:00</div><small id="total">total 00:00</small></div>
+    <div class="dato"><div class="etq">Zancadas</div><div id="pasos" class="valor">0</div><small id="vueltas">0 vueltas</small></div>
+    <div class="dato"><div class="etq">Calorías</div><div id="kcal" class="valor">0</div><small>estimación</small></div>
+    <div class="dato"><div class="etq">Cad. media</div><div id="cadMed" class="valor">0</div><small id="cadMax">máx 0</small></div>
+    <div class="dato"><div class="etq">Distancia</div><div id="km" class="valor">0.00</div><small>km equivalentes</small></div>
+    <div class="dato"><div class="etq">Velocidad</div><div id="kmh" class="valor">0.0</div><small>km/h equivalentes</small></div>
+    <div class="dato"><div class="etq">Pausas</div><div id="pausas" class="valor">0</div><small id="parado">00:00 parado</small></div>
+    <div class="dato"><div class="etq">Regularidad</div><div id="reg" class="valor">–</div><small>% de constancia</small></div>
+    <div class="dato"><div class="etq">Pulso</div><div id="fc" class="valor">–</div><small id="fcInfo">sin banda</small></div>
+  </section>
+
+  <section id="metaBox" class="panel" hidden>
+    <div class="fila"><span id="metaTxt">Meta</span><span id="metaPct">0 %</span></div>
+    <div id="metaBarra" class="barra"><i></i></div>
+  </section>
+
+  <section class="panel">
+    <h2>Zonas de ritmo</h2>
+    <div class="zona z0"><span>Suave</span><div class="barra"><i id="z0b"></i></div><span id="z0t">00:00</span></div>
+    <div class="zona z1"><span>Medio</span><div class="barra"><i id="z1b"></i></div><span id="z1t">00:00</span></div>
+    <div class="zona z2"><span>Rápido</span><div class="barra"><i id="z2b"></i></div><span id="z2t">00:00</span></div>
+  </section>
+
+  <section class="panel">
+    <h2>Cadencia durante la sesión</h2>
+    <canvas id="serie" width="448" height="110" aria-label="Gráfico de cadencia de la sesión"></canvas>
+  </section>
+
+  <section id="resumen" class="panel" hidden></section>
+
+  <div class="botones">
+    <button id="btnIniciar" class="principal">Iniciar</button>
+    <button id="btnTerminar" disabled>Terminar y guardar</button>
+  </div>
+  <div class="botones">
+    <button id="btnPulso" class="chico">Conectar banda de pulso</button>
+  </div>
+
+  <details>
+    <summary>Ajustes</summary>
+    <label class="campo" for="peso">Peso (kg)<input id="peso" type="number" min="30" max="200" step="1" value="70" inputmode="numeric"></label>
+    <label class="campo" for="resist">Resistencia
+      <select id="resist"><option value="4.5">Baja</option><option value="5.5" selected>Media</option><option value="7">Alta</option></select>
+    </label>
+    <label class="campo" for="largo">Largo de zancada (m)<input id="largo" type="number" min="0.2" max="1" step="0.01" value="0.45" inputmode="decimal"></label>
+    <label class="campo" for="metaTipo">Meta de sesión
+      <select id="metaTipo"><option value="" selected>Sin meta</option><option value="min">Minutos activos</option><option value="pasos">Zancadas</option><option value="kcal">Calorías</option></select>
+    </label>
+    <label class="campo" for="metaVal">Valor de la meta<input id="metaVal" type="number" min="1" step="1" value="20" inputmode="numeric"></label>
+    <label class="campo" for="zMedio">Ritmo medio desde<input id="zMedio" type="number" min="60" max="220" step="5" value="135" inputmode="numeric"></label>
+    <label class="campo" for="zRapido">Ritmo rápido desde<input id="zRapido" type="number" min="60" max="240" step="5" value="155" inputmode="numeric"></label>
+    <label class="campo" for="eje">Eje del sensor
+      <select id="eje"><option value="x" selected>X</option><option value="y">Y</option><option value="z">Z</option></select>
+    </label>
+    <label class="campo" for="sens">Sensibilidad
+      <select id="sens"><option value="0.05">Alta</option><option value="0.08" selected>Normal</option><option value="0.15">Baja</option></select>
+    </label>
+    <p class="nota">Coloca el móvil en la consola igual que en la prueba. Si cuenta de más o de menos, prueba otro eje. Distancia, velocidad y calorías son aproximadas: la máquina no informa su resistencia ni su recorrido real.</p>
+  </details>
+
+  <details id="histBox">
+    <summary>Historial y récords</summary>
+    <div id="records"></div>
+    <div id="hist" class="tabla"></div>
+    <div class="botones" style="margin-top:10px">
+      <button id="btnCsv" class="chico">Descargar CSV</button>
+      <button id="btnBorrar" class="chico">Borrar historial</button>
+    </div>
+  </details>
+</main>
+
+<script>
+(function(){
+  "use strict";
+  var FS = 50;                 // frecuencia fija a la que se remuestrea la señal (Hz)
+  var MIN_ENTRE_PASOS = 0.25;  // segundos
+  var PARADA = 3;              // segundos sin zancadas para pausar el tiempo activo
+  var CADA_SERIE = 5;          // segundos entre puntos del gráfico de sesión
+  var $ = function(id){ return document.getElementById(id); };
+  var num = function(id, def){ var v = parseFloat($(id).value); return isFinite(v) ? v : def; };
+
+  // ---------- almacenamiento local (puede fallar: siempre con try/catch) ----------
+  function leer(k, def){ try{ var v = localStorage.getItem(k); return v === null ? def : JSON.parse(v); }catch(e){ return def; } }
+  function guardar(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+
+  var cfg = leer("eliptica_cfg", {});
+  ["peso","resist","largo","metaTipo","metaVal","zMedio","zRapido","eje","sens"].forEach(function(id){
+    if (cfg[id] !== undefined) $(id).value = cfg[id];
+    $(id).addEventListener("change", function(){ cfg[id] = $(id).value; guardar("eliptica_cfg", cfg); });
+  });
+
+  // ---------- filtros (pasa-banda 1.3–3.2 Hz: deja pasar el ritmo de zancada) ----------
+  function biquad(tipo, f0, q){
+    var w = 2*Math.PI*f0/FS, a = Math.sin(w)/(2*q), c = Math.cos(w), b;
+    if (tipo === "lp") b = [(1-c)/2, 1-c, (1-c)/2]; else b = [(1+c)/2, -(1+c), (1+c)/2];
+    var a0 = 1+a;
+    var k = [b[0]/a0, b[1]/a0, b[2]/a0, -2*c/a0, (1-a)/a0];
+    var x1=0,x2=0,y1=0,y2=0;
+    return function(x){ var y = k[0]*x + k[1]*x1 + k[2]*x2 - k[3]*y1 - k[4]*y2; x2=x1; x1=x; y2=y1; y1=y; return y; };
+  }
+
+  // ---------- estado de la sesión ----------
+  var S = null;
+  function nuevaSesion(){
+    return { inicio: Date.now(), fin: null, pasos: 0, activo: 0, kcal: 0, tiemposPaso: [],
+      filtros: [biquad("hp",1.3,0.707), biquad("lp",3.2,0.707), biquad("lp",3.2,0.707)],
+      ms: 0, armado: false, ultPaso: -9, t: 0, tPrev: null, vPrev: 0, tSig: null,
+      traza: [], eventos: 0, corriendo: true,
+      cadMax: 0, zonas: [0,0,0], serie: [], sigSerie: CADA_SERIE,
+      pausas: 0, enPausa: false,
+      ints: [], intSum: 0, intN: 0, regSum: 0, regN: 0,
+      fcSum: 0, fcN: 0, fcMax: 0, metaHecha: false };
+  }
+
+  function cadencia(){
+    var a = S.tiemposPaso;
+    if (a.length < 3 || S.t - S.ultPaso > PARADA) return 0;
+    var n = Math.min(a.length, 9);
+    var dur = a[a.length-1] - a[a.length-n];
+    return dur > 0 ? (n-1)/dur*60 : 0;
+  }
+  function cadMedia(s){ return s.activo > 0 ? s.pasos/s.activo*60 : 0; }
+  function distancia(s){ return s.pasos * num("largo",0.45) / 1000; }
+  function regularidad(s){
+    if (s.regN < 6 || s.intN === 0) return null;
+    var r = 100 * (1 - (s.regSum/s.regN) / (s.intSum/s.intN));
+    return Math.max(0, Math.min(100, r));
+  }
+  function totalSeg(s){ return ((s.fin || Date.now()) - s.inicio) / 1000; }
+
+  // Procesa una muestra ya remuestreada a 50 Hz
+  function muestra(v){
+    var s = S, dt = 1/FS;
+    s.t += dt;
+    for (var i=0;i<s.filtros.length;i++) v = s.filtros[i](v);
+    s.ms += (v*v - s.ms) / (3*FS);
+    var umbral = Math.max(num("sens",0.08), 0.3*Math.sqrt(s.ms));
+    if (v < -umbral) s.armado = true;
+    else if (v > umbral && s.armado && s.t - s.ultPaso > MIN_ENTRE_PASOS){
+      var intervalo = s.t - s.ultPaso;
+      s.armado = false; s.ultPaso = s.t; s.pasos++;
+      s.tiemposPaso.push(s.t); if (s.tiemposPaso.length > 12) s.tiemposPaso.shift();
+      // regularidad: compara cada zancada con la del mismo pie (dos atrás)
+      if (intervalo < 1.5){
+        s.ints.push(intervalo); if (s.ints.length > 3) s.ints.shift();
+        s.intSum += intervalo; s.intN++;
+        if (s.ints.length === 3){ s.regSum += Math.abs(s.ints[2] - s.ints[0]); s.regN++; }
+      } else s.ints = [];
+    }
+    var activo = s.t - s.ultPaso < PARADA && s.pasos > 0;
+    if (activo){
+      var c = cadencia();
+      s.enPausa = false;
+      s.activo += dt;
+      var met = num("resist",5.5) * Math.min(1.4, Math.max(0.6, c/140));
+      s.kcal += met * num("peso",70) * 3.5 / 200 / 60 * dt;
+      if (c > 0){
+        s.zonas[c >= num("zRapido",155) ? 2 : c >= num("zMedio",135) ? 1 : 0] += dt;
+        if (s.tiemposPaso.length >= 9 && c > s.cadMax) s.cadMax = c;
+      }
+    } else if (s.pasos > 0 && !s.enPausa){ s.enPausa = true; s.pausas++; }
+    s.traza.push(v); if (s.traza.length > FS*6) s.traza.shift();
+  }
+
+  // Evento del sensor: se remuestrea por interpolación lineal a 50 Hz
+  function alMover(e){
+    if (!S || !S.corriendo) return;
+    var acc = e.acceleration && e.acceleration.x !== null ? e.acceleration : e.accelerationIncludingGravity;
+    if (!acc || acc[$("eje").value] === null || acc[$("eje").value] === undefined) return;
+    var v = acc[$("eje").value], t = performance.now()/1000;
+    S.eventos++;
+    if (S.tPrev === null){ S.tPrev = t; S.vPrev = v; S.tSig = t; return; }
+    if (t - S.tPrev > 1){ S.tSig = t; }                 // hueco largo: no rellenar
+    while (S.tSig <= t){
+      var f = (S.tSig - S.tPrev) / (t - S.tPrev || 1);
+      muestra(S.vPrev + (v - S.vPrev)*f);
+      S.tSig += 1/FS;
+    }
+    S.tPrev = t; S.vPrev = v;
+  }
+
+  // ---------- pulso por Bluetooth (banda o reloj que comparta el pulso) ----------
+  var fcActual = null;
+  $("btnPulso").addEventListener("click", function(){
+    if (!navigator.bluetooth){ $("fcInfo").textContent = "Bluetooth no disponible"; return; }
+    $("fcInfo").textContent = "buscando…";
+    navigator.bluetooth.requestDevice({ filters: [{ services: ["heart_rate"] }] })
+      .then(function(d){
+        d.addEventListener("gattserverdisconnected", function(){ fcActual = null; $("fcInfo").textContent = "banda desconectada"; $("fc").textContent = "–"; });
+        return d.gatt.connect();
+      })
+      .then(function(g){ return g.getPrimaryService("heart_rate"); })
+      .then(function(sv){ return sv.getCharacteristic("heart_rate_measurement"); })
+      .then(function(ch){
+        ch.addEventListener("characteristicvaluechanged", function(ev){
+          var dv = ev.target.value;
+          fcActual = (dv.getUint8(0) & 1) ? dv.getUint16(1, true) : dv.getUint8(1);
+          if (S && S.corriendo && fcActual > 0){ S.fcSum += fcActual; S.fcN++; if (fcActual > S.fcMax) S.fcMax = fcActual; }
+        });
+        return ch.startNotifications();
+      })
+      .then(function(){ $("fcInfo").textContent = "conectada"; $("btnPulso").textContent = "Banda conectada"; })
+      .catch(function(){ $("fcInfo").textContent = "no se conectó"; });
+  });
+
+  // ---------- pantalla ----------
+  function mmss(seg){ seg = Math.max(0, Math.floor(seg)); var m = Math.floor(seg/60), s = seg%60; return (m<10?"0":"")+m+":"+(s<10?"0":"")+s; }
+  function estado(txt, clase){ var el = $("estado"); el.textContent = txt; el.className = "estado" + (clase ? " "+clase : ""); }
+  function aviso(txt){ var a = $("aviso"); if (txt){ a.textContent = txt; a.hidden = false; } else a.hidden = true; }
+
+  var ctx = $("graf").getContext("2d"), ctx2 = $("serie").getContext("2d");
+  function dibujarSenal(){
+    var c = $("graf"), w = c.width, h = c.height, i;
+    ctx.clearRect(0,0,w,h);
+    ctx.strokeStyle = "#2c353e"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0,h/2); ctx.lineTo(w,h/2); ctx.stroke();
+    if (!S || S.traza.length < 2) return;
+    var max = 0.2; for (i=0;i<S.traza.length;i++) max = Math.max(max, Math.abs(S.traza[i]));
+    ctx.strokeStyle = "#f2b23a"; ctx.lineWidth = 2; ctx.beginPath();
+    for (i=0;i<S.traza.length;i++){
+      var x = i/(FS*6)*w, y = h/2 - S.traza[i]/max*(h/2-3);
+      if (i) ctx.lineTo(x,y); else ctx.moveTo(x,y);
+    }
+    ctx.stroke();
+  }
+  function dibujarSerie(){
+    var c = $("serie"), w = c.width, h = c.height, izq = 30, aba = 4, arr = 6, i;
+    ctx2.clearRect(0,0,w,h);
+    var datos = S ? S.serie : [];
+    var tope = Math.max(180, num("zRapido",155) + 20);
+    for (i=0;i<datos.length;i++) tope = Math.max(tope, datos[i] + 10);
+    var Y = function(v){ return h - aba - v/tope*(h-aba-arr); };
+    ctx2.font = "11px sans-serif"; ctx2.fillStyle = "#8d9aa6"; ctx2.textAlign = "right"; ctx2.textBaseline = "middle";
+    [num("zMedio",135), num("zRapido",155)].forEach(function(v){
+      ctx2.strokeStyle = "#2c353e"; ctx2.lineWidth = 1; ctx2.beginPath(); ctx2.moveTo(izq, Y(v)); ctx2.lineTo(w, Y(v)); ctx2.stroke();
+      ctx2.fillText(String(v), izq-4, Y(v));
+    });
+    if (datos.length < 2) return;
+    var paso = (w-izq) / Math.max(datos.length-1, 59);   // primeros 5 minutos a escala fija, luego se comprime
+    ctx2.beginPath();
+    for (i=0;i<datos.length;i++){ var x = izq + i*paso; if (i) ctx2.lineTo(x, Y(datos[i])); else ctx2.moveTo(x, Y(datos[i])); }
+    ctx2.strokeStyle = "#f2b23a"; ctx2.lineWidth = 2; ctx2.stroke();
+    ctx2.lineTo(izq + (datos.length-1)*paso, h-aba); ctx2.lineTo(izq, h-aba); ctx2.closePath();
+    ctx2.fillStyle = "rgba(242,178,58,.14)"; ctx2.fill();
+    ctx2.beginPath(); ctx2.arc(izq + (datos.length-1)*paso, Y(datos[datos.length-1]), 3.5, 0, 7); ctx2.fillStyle = "#f2b23a"; ctx2.fill();
+  }
+
+  function metaProgreso(s){
+    var tipo = $("metaTipo").value, obj = num("metaVal",0);
+    if (!tipo || obj <= 0) return null;
+    var val = tipo === "min" ? s.activo/60 : tipo === "pasos" ? s.pasos : s.kcal;
+    var nombre = tipo === "min" ? "min activos" : tipo === "pasos" ? "zancadas" : "kcal";
+    return { pct: Math.min(1, val/obj), txt: "Meta: " + (tipo === "min" ? val.toFixed(1) : Math.round(val)) + " de " + obj + " " + nombre };
+  }
+
+  var audio = null;
+  function pitido(){
+    try{
+      if (!audio) return;
+      var o = audio.createOscillator(), g = audio.createGain();
+      o.frequency.value = 880; g.gain.value = 0.15; o.connect(g); g.connect(audio.destination);
+      o.start(); o.stop(audio.currentTime + 0.35);
+    }catch(e){}
+  }
+
+  function refrescar(){
+    if (S){
+      var s = S, tot = totalSeg(s), c = s.corriendo ? cadencia() : 0, zt = s.zonas[0]+s.zonas[1]+s.zonas[2], i;
+      $("cad").textContent = Math.round(c);
+      $("tiempo").textContent = mmss(s.activo);
+      $("total").textContent = "total " + mmss(tot);
+      $("pasos").textContent = s.pasos;
+      $("vueltas").textContent = Math.floor(s.pasos/2) + " vueltas";
+      $("kcal").textContent = Math.round(s.kcal);
+      $("cadMed").textContent = Math.round(cadMedia(s));
+      $("cadMax").textContent = "máx " + Math.round(s.cadMax);
+      $("km").textContent = distancia(s).toFixed(2);
+      $("kmh").textContent = (c * num("largo",0.45) * 60 / 1000).toFixed(1);
+      $("pausas").textContent = s.pausas;
+      $("parado").textContent = mmss(tot - s.activo) + " parado";
+      var r = regularidad(s); $("reg").textContent = r === null ? "–" : Math.round(r);
+      $("fc").textContent = fcActual ? fcActual : "–";
+      if (s.fcN) $("fcInfo").textContent = "med " + Math.round(s.fcSum/s.fcN) + " · máx " + s.fcMax;
+      for (i=0;i<3;i++){ $("z"+i+"b").style.width = (zt ? s.zonas[i]/zt*100 : 0) + "%"; $("z"+i+"t").textContent = mmss(s.zonas[i]); }
+
+      var m = metaProgreso(s);
+      $("metaBox").hidden = !m;
+      if (m){
+        $("metaTxt").textContent = m.txt; $("metaPct").textContent = Math.round(m.pct*100) + " %";
+        $("metaBarra").firstElementChild.style.width = (m.pct*100) + "%";
+        $("metaBarra").className = "barra" + (m.pct >= 1 ? " hecha" : "");
+        if (m.pct >= 1 && !s.metaHecha && s.corriendo){ s.metaHecha = true; pitido(); }
+      }
+
+      if (s.corriendo){
+        while (tot >= s.sigSerie){ s.serie.push(Math.round(c)); s.sigSerie += CADA_SERIE; if (s.serie.length > 1440) s.serie.shift(); }
+        if (s.eventos === 0 && tot > 3){
+          estado("Sin sensor","error");
+          aviso("El navegador no entrega datos del sensor de movimiento. Abre la página con https en Chrome, directamente (no dentro de otra app), y vuelve a pulsar Iniciar.");
+        } else if (s.eventos > 0){
+          aviso("");
+          if (m && m.pct >= 1) estado("Meta cumplida","activo");
+          else if (s.t - s.ultPaso < PARADA && s.pasos > 0) estado("Contando","activo");
+          else estado("Esperando movimiento","pausa");
+        }
+      }
+      dibujarSenal(); dibujarSerie();
+    }
+    requestAnimationFrame(refrescar);
+  }
+
+  // ---------- pantalla siempre encendida ----------
+  var bloqueo = null;
+  function mantenerPantalla(){
+    if (!("wakeLock" in navigator)) return;
+    navigator.wakeLock.request("screen").then(function(l){ bloqueo = l; }).catch(function(){});
+  }
+  document.addEventListener("visibilitychange", function(){
+    if (document.visibilityState === "visible" && S && S.corriendo) mantenerPantalla();
+  });
+
+  // ---------- historial, récords y comparación ----------
+  function historial(){ return leer("eliptica_hist", []); }
+  var CAMPOS = [
+    { k:"seg",  n:"Tiempo activo", f:mmss },
+    { k:"pasos",n:"Zancadas",      f:function(v){ return String(v); } },
+    { k:"cad",  n:"Cadencia media",f:function(v){ return String(v); } },
+    { k:"cadMax",n:"Cadencia máxima",f:function(v){ return String(v); } },
+    { k:"km",   n:"Distancia (km)",f:function(v){ return v.toFixed(2); } },
+    { k:"kcal", n:"Calorías",      f:function(v){ return String(v); } },
+    { k:"reg",  n:"Regularidad (%)",f:function(v){ return String(v); } }
+  ];
+  function mejor(h, k){ var m = null; h.forEach(function(r){ if (typeof r[k] === "number" && (m === null || r[k] > m)) m = r[k]; }); return m; }
+
+  function pintarHistorial(){
+    var h = historial();
+    if (!h.length){ $("records").innerHTML = ""; $("hist").innerHTML = '<p class="nota">Aún no hay sesiones guardadas.</p>'; return; }
+    $("records").innerHTML = '<p class="nota">Récords: ' + CAMPOS.slice(0,5).map(function(c){
+      var m = mejor(h, c.k); return m === null ? "" : c.n.toLowerCase() + " " + c.f(m); }).filter(Boolean).join(" · ") + "</p>";
+    var filas = h.slice().reverse().map(function(r){
+      return "<tr><td>"+r.fecha+"</td><td>"+mmss(r.seg)+"</td><td>"+r.pasos+"</td><td>"+r.cad+"</td><td>"+
+        (typeof r.km === "number" ? r.km.toFixed(2) : "–")+"</td><td>"+r.kcal+"</td></tr>";
+    }).join("");
+    $("hist").innerHTML = "<table><thead><tr><th>Fecha</th><th>Tiempo</th><th>Zancadas</th><th>Cad.</th><th>km</th><th>kcal</th></tr></thead><tbody>"+filas+"</tbody></table>";
+  }
+
+  function pintarResumen(actual, previos){
+    var ant = previos.length ? previos[previos.length-1] : null;
+    var html = "<h2>Resumen de la sesión" + (ant ? " · comparada con la anterior" : "") + "</h2>";
+    CAMPOS.forEach(function(c){
+      var v = actual[c.k]; if (typeof v !== "number") return;
+      var extra = "";
+      if (ant && typeof ant[c.k] === "number"){
+        var d = v - ant[c.k];
+        if (d !== 0){
+          var txt = c.k === "seg" ? mmss(Math.abs(d)) : c.k === "km" ? Math.abs(d).toFixed(2) : String(Math.abs(Math.round(d)));
+          extra = ' <span class="' + (d > 0 ? "sube" : "baja") + '">' + (d > 0 ? "+" : "−") + txt + "</span>";
+        }
+      }
+      var m = mejor(previos, c.k);
+      if (previos.length && m !== null && v > m && c.k !== "kcal") extra += '<span class="record">Récord</span>';
+      html += '<div class="fila"><span>' + c.n + "</span><span>" + c.f(v) + extra + "</span></div>";
+    });
+    $("resumen").innerHTML = html; $("resumen").hidden = false;
+  }
+
+  // ---------- botones ----------
+  function arrancar(){
+    S = nuevaSesion();
+    $("resumen").hidden = true;
+    window.addEventListener("devicemotion", alMover);
+    mantenerPantalla();
+    try{ if (!audio){ var AC = window.AudioContext || window.webkitAudioContext; if (AC) audio = new AC(); } }catch(e){}
+    estado("Esperando movimiento","pausa");
+    $("btnIniciar").textContent = "Reiniciar";
+    $("btnTerminar").disabled = false;
+  }
+  $("btnIniciar").addEventListener("click", function(){
+    if (typeof DeviceMotionEvent === "undefined"){ estado("Sin sensor","error"); aviso("Este navegador no tiene acceso al sensor de movimiento."); return; }
+    if (typeof DeviceMotionEvent.requestPermission === "function"){
+      DeviceMotionEvent.requestPermission().then(function(r){
+        if (r === "granted") arrancar(); else { estado("Sin permiso","error"); aviso("Hace falta permitir el acceso al sensor de movimiento."); }
+      }).catch(function(){ estado("Sin permiso","error"); });
+    } else arrancar();
+  });
+
+  $("btnTerminar").addEventListener("click", function(){
+    if (!S) return;
+    S.corriendo = false; S.fin = Date.now();
+    window.removeEventListener("devicemotion", alMover);
+    if (bloqueo){ bloqueo.release().catch(function(){}); bloqueo = null; }
+    if (S.pasos > 0){
+      var d = new Date(S.inicio), p = function(n){ return (n<10?"0":"")+n; }, r = regularidad(S);
+      var reg = { fecha: d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes()),
+        seg: Math.round(S.activo), total: Math.round(totalSeg(S)), pausas: S.pausas, pasos: S.pasos,
+        cad: Math.round(cadMedia(S)), cadMax: Math.round(S.cadMax), km: Math.round(distancia(S)*100)/100,
+        kcal: Math.round(S.kcal), zonas: S.zonas.map(Math.round) };
+      if (r !== null) reg.reg = Math.round(r);
+      if (S.fcN){ reg.fcMed = Math.round(S.fcSum/S.fcN); reg.fcMax = S.fcMax; }
+      var h = historial();
+      pintarResumen(reg, h);
+      h.push(reg); guardar("eliptica_hist", h);
+      pintarHistorial();
+      estado("Sesión guardada","activo");
+    } else estado("Listo");
+    $("btnIniciar").textContent = "Iniciar";
+    $("btnTerminar").disabled = true;
+  });
+
+  $("btnCsv").addEventListener("click", function(){
+    var h = historial(); if (!h.length) return;
+    var v = function(x){ return x === undefined || x === null ? "" : x; };
+    var csv = "fecha,seg_activos,seg_totales,pausas,zancadas,vueltas,cadencia_media,cadencia_max,km_equiv,kcal_estimadas,regularidad_pct,pulso_medio,pulso_max,seg_suave,seg_medio,seg_rapido\n" +
+      h.map(function(r){ var z = r.zonas || ["","",""];
+        return [r.fecha, r.seg, v(r.total), v(r.pausas), r.pasos, Math.floor(r.pasos/2), r.cad, v(r.cadMax), v(r.km), r.kcal, v(r.reg), v(r.fcMed), v(r.fcMax), z[0], z[1], z[2]].join(","); }).join("\n");
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], {type:"text/csv"}));
+    a.download = "eliptica_historial.csv"; document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  var confirmarBorrado = false;
+  $("btnBorrar").addEventListener("click", function(){
+    if (!confirmarBorrado){ confirmarBorrado = true; $("btnBorrar").textContent = "Pulsa otra vez para borrar";
+      setTimeout(function(){ confirmarBorrado = false; $("btnBorrar").textContent = "Borrar historial"; }, 4000); return; }
+    guardar("eliptica_hist", []); pintarHistorial();
+    confirmarBorrado = false; $("btnBorrar").textContent = "Borrar historial";
+  });
+
+  // expuesto solo para pruebas automáticas
+  window.__eliptica = { arrancar: arrancar, alMover: alMover, sesion: function(){ return S; }, regularidad: regularidad, cadMedia: cadMedia };
+
+  pintarHistorial();
+  requestAnimationFrame(refrescar);
+})();
+</script>
+</body>
+</html>
