@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contador Elíptica Monark</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#101418">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600&display=swap" rel="stylesheet">
+<style>
+/* Layout: una columna para móvil en vertical, tres pestañas (Entrenar · Progreso · Ajustes).
+   Entrenar: cadencia grande, rejilla de datos, fantasma, rutina, ruta, meta, zonas, gráfico, botones. */
+:root{
+  --fondo:#101418; --panel:#1a2026; --linea:#2c353e;
+  --texto:#e9eef2; --tenue:#8d9aa6;
+  --acento:#f2b23a; --ok:#58c98b; --alerta:#ef6b5e; --frio:#5fa8e0;
+  --num:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --cuerpo:"Barlow","Segoe UI",Roboto,Arial,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--fondo);color:var(--texto);font-family:var(--cuerpo);font-size:16px;line-height:1.4;transition:background-color .8s}
+body[data-zona="0"]{background:#0c1a26}
+body[data-zona="1"]{background:#221b0b}
+body[data-zona="2"]{background:#2a1110}
+@media (prefers-reduced-motion:reduce){body{transition:none}}
+main{max-width:480px;margin:0 auto;padding:12px 16px 24px;display:flex;flex-direction:column;gap:12px;min-height:100%}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+h1{font-family:var(--num);font-weight:600;font-size:20px;letter-spacing:.06em;text-transform:uppercase;margin:0}
+h2{font-size:13px;color:var(--tenue);text-transform:uppercase;letter-spacing:.08em;font-weight:500;margin:0 0 8px}
+nav{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:var(--panel);border:1px solid var(--linea);border-radius:12px;padding:4px}
+nav button{font-size:15px;padding:9px 4px;border:0;background:transparent;color:var(--tenue);border-radius:9px}
+nav button[aria-selected="true"]{background:var(--fondo);color:var(--texto)}
+.vista{display:flex;flex-direction:column;gap:12px}
+.estado{font-size:13px;padding:4px 10px;border-radius:999px;border:1px solid var(--linea);color:var(--tenue);white-space:nowrap}
+.estado.activo{color:var(--ok);border-color:var(--ok)}
+.estado.pausa{color:var(--acento);border-color:var(--acento)}
+.estado.error{color:var(--alerta);border-color:var(--alerta)}
+.panel{background:var(--panel);border:1px solid var(--linea);border-radius:12px;padding:12px 14px}
+.cadencia{text-align:center;padding-bottom:8px}
+.cadencia .valor{font-family:var(--num);font-weight:600;font-size:104px;line-height:1;color:var(--acento);font-variant-numeric:tabular-nums}
+.etq{font-size:11px;color:var(--tenue);text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+canvas{display:block;width:100%}
+#graf{height:48px;margin-top:6px}
+#serie{height:110px}
+#progGraf{height:160px}
+.rejilla{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.dato{background:var(--panel);border:1px solid var(--linea);border-radius:10px;padding:8px 10px;min-width:0}
+.dato .valor{font-family:var(--num);font-weight:600;font-size:32px;line-height:1.1;font-variant-numeric:tabular-nums}
+.dato small{display:block;color:var(--tenue);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:15px}
+.botones{display:flex;gap:10px}
+button{font-family:var(--cuerpo);font-size:17px;font-weight:600;border-radius:12px;border:1px solid var(--linea);background:var(--panel);color:var(--texto);padding:13px;flex:1;cursor:pointer}
+button.principal{background:var(--acento);color:#1b1405;border-color:var(--acento)}
+button.chico{font-size:14px;padding:9px;font-weight:500}
+button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--acento);outline-offset:2px}
+button:disabled,select:disabled{opacity:.45}
+.aviso{background:#2a1a18;border:1px solid var(--alerta);color:#ffd9d4;border-radius:12px;padding:10px 14px;font-size:14px}
+[hidden]{display:none!important}
+.barra{height:10px;background:var(--fondo);border-radius:999px;overflow:hidden;border:1px solid var(--linea)}
+.barra i{display:block;height:100%;width:0;background:var(--acento);border-radius:999px}
+.barra.hecha i{background:var(--ok)}
+.fila{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:14px;margin-bottom:6px;font-variant-numeric:tabular-nums}
+.grande{font-family:var(--num);font-weight:600;font-size:30px;line-height:1.1;font-variant-numeric:tabular-nums}
+.zona{display:grid;grid-template-columns:64px 1fr 48px;gap:8px;align-items:center;font-size:14px;margin-top:6px;font-variant-numeric:tabular-nums}
+.zona span:last-child{text-align:right}
+.zona .barra i{background:var(--frio)}
+.zona.z1 .barra i{background:var(--acento)}
+.zona.z2 .barra i{background:var(--alerta)}
+.pista{position:relative;height:22px;margin-top:8px}
+.pista::before{content:"";position:absolute;left:0;right:0;top:10px;height:2px;background:var(--linea)}
+.pista span{position:absolute;top:4px;width:14px;height:14px;border-radius:50%;margin-left:-7px;transition:left .5s}
+#yoPunto{background:var(--acento)}
+#fanPunto{background:transparent;border:2px dashed var(--tenue)}
+.chip{display:inline-block;font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid var(--linea);color:var(--tenue)}
+.chip.ok{color:var(--ok);border-color:var(--ok)} .chip.mal{color:var(--alerta);border-color:var(--alerta)}
+.segs{display:flex;gap:2px;margin-top:8px;height:8px}
+.segs i{flex:1;border-radius:2px;background:var(--linea)}
+.segs i.s0{background:var(--frio)} .segs i.s1{background:var(--acento)} .segs i.s2{background:var(--alerta)}
+.segs i.hecho{opacity:.35}
+.paradas{position:relative;height:30px;margin-top:6px}
+.paradas .linea{position:absolute;left:0;right:0;top:8px;height:4px;border-radius:2px;background:var(--linea)}
+.paradas .hecho{position:absolute;left:0;top:8px;height:4px;border-radius:2px;background:var(--acento);width:0}
+.paradas b{position:absolute;top:5px;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:var(--panel);border:2px solid var(--tenue)}
+.paradas b.ok{border-color:var(--acento);background:var(--acento)}
+#mapa{height:280px;border-radius:10px;border:1px solid var(--linea);background:#0b0f12;margin-top:8px}
+#mapa .leaflet-tile{filter:brightness(.62) invert(1) contrast(2.6) hue-rotate(200deg) saturate(.35) brightness(.75)}
+.leaflet-container{font-family:var(--cuerpo)}
+#rutaEsquema{height:220px;margin-top:8px}
+.racha{display:grid;grid-template-columns:repeat(17,1fr);gap:3px;margin-top:8px}
+.racha i{aspect-ratio:1;border-radius:3px;background:var(--fondo);border:1px solid var(--linea)}
+.racha i.n1{background:#6b5320;border-color:#6b5320} .racha i.n2{background:#b5852a;border-color:#b5852a} .racha i.n3{background:var(--acento);border-color:var(--acento)}
+.racha i.vacio{visibility:hidden}
+.logros{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.logro{border:1px solid var(--linea);border-radius:10px;padding:8px;text-align:center;font-size:12px;color:var(--tenue);min-width:0}
+.logro svg{display:block;margin:0 auto 4px;width:34px;height:34px}
+.logro.si{color:var(--texto);border-color:#6b5320;background:#211c12}
+.logro.nuevo{border-color:var(--acento);box-shadow:0 0 0 2px #f2b23a55}
+.campo{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:10px;font-size:15px}
+select,input,textarea{font:inherit;background:var(--fondo);color:var(--texto);border:1px solid var(--linea);border-radius:8px;padding:6px 8px;width:140px}
+textarea{width:100%;min-height:110px;font-size:14px;margin-top:8px}
+.tabla{overflow-x:auto}
+table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:5px 4px;border-bottom:1px solid var(--linea);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--tenue);font-weight:500}
+.nota{color:var(--tenue);font-size:13px;margin:8px 0 0}
+.sube{color:var(--ok)} .baja{color:var(--alerta)}
+.record{font-size:11px;color:#1b1405;background:var(--acento);border-radius:999px;padding:1px 7px;margin-left:6px;font-weight:600}
+.dosc{display:flex;gap:8px;margin-bottom:6px}
+.dosc select{flex:1;width:auto}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Elíptica Monark</h1>
+    <span id="estado" class="estado">Listo</span>
+  </header>
+
+  <nav role="tablist" aria-label="Secciones">
+    <button id="tabEntrenar" role="tab" aria-selected="true" aria-controls="vEntrenar">Entrenar</button>
+    <button id="tabProgreso" role="tab" aria-selected="false" aria-controls="vProgreso">Progreso</button>
+    <button id="tabAjustes" role="tab" aria-selected="false" aria-controls="vAjustes">Ajustes</button>
+  </nav>
+
+  <div id="aviso" class="aviso" hidden></div>
+
+  <!-- ==================== ENTRENAR ==================== -->
+  <section id="vEntrenar" class="vista" role="tabpanel">
+    <section class="panel cadencia">
+      <div class="etq">Cadencia · zancadas por minuto</div>
+      <div id="cad" class="valor">0</div>
+      <canvas id="graf" width="448" height="48" aria-label="Señal del sensor"></canvas>
+    </section>
+
+    <section class="rejilla">
+      <div class="dato"><div class="etq">Activo</div><div id="tiempo" class="valor">00:00</div><small id="total">total 00:00</small></div>
+      <div class="dato"><div class="etq">Zancadas</div><div id="pasos" class="valor">0</div><small id="vueltas">0 vueltas</small></div>
+      <div class="dato"><div class="etq">Calorías</div><div id="kcal" class="valor">0</div><small>estimación</small></div>
+      <div class="dato"><div class="etq">Cad. media</div><div id="cadMed" class="valor">0</div><small id="cadMax">máx 0</small></div>
+      <div class="dato"><div class="etq">Distancia</div><div id="km" class="valor">0.00</div><small>km equivalentes</small></div>
+      <div class="dato"><div class="etq">Velocidad</div><div id="kmh" class="valor">0.0</div><small>km/h equivalentes</small></div>
+      <div class="dato"><div class="etq">Pausas</div><div id="pausas" class="valor">0</div><small id="parado">00:00 parado</small></div>
+      <div class="dato"><div class="etq">Regularidad</div><div id="reg" class="valor">–</div><small>% de constancia</small></div>
+      <div class="dato"><div class="etq">Pulso</div><div id="fc" class="valor">–</div><small id="fcInfo">sin banda</small></div>
+    </section>
+
+    <section id="fanBox" class="panel" hidden>
+      <div class="fila"><span>Rival fantasma <span id="fanNombre" class="nota"></span></span><span id="fanDif" class="grande">0</span></div>
+      <div class="pista" aria-hidden="true"><span id="fanPunto" style="left:50%"></span><span id="yoPunto" style="left:50%"></span></div>
+      <p id="fanTxt" class="nota">Empieza a pedalear para competir.</p>
+    </section>
+
+    <section id="rutBox" class="panel" hidden>
+      <div class="fila"><span id="rutNombre">Rutina</span><span id="rutChip" class="chip">–</span></div>
+      <div class="fila"><span id="rutAhora" class="grande">–</span><span id="rutResta" class="grande">00:00</span></div>
+      <div class="fila"><span id="rutSig" class="nota" style="margin:0">–</span><span id="rutCumple" class="nota" style="margin:0"></span></div>
+      <div id="rutSegs" class="segs" aria-hidden="true"></div>
+    </section>
+
+    <section id="rutaMini" class="panel">
+      <div class="fila"><span id="rmNombre">Ruta</span><span id="rmKm">0 km</span></div>
+      <div class="paradas" id="rmParadas" aria-hidden="true"><div class="linea"></div><div class="hecho" id="rmHecho"></div></div>
+      <p id="rmSig" class="nota">–</p>
+    </section>
+
+    <section id="metaBox" class="panel" hidden>
+      <div class="fila"><span id="metaTxt">Meta</span><span id="metaPct">0 %</span></div>
+      <div id="metaBarra" class="barra"><i></i></div>
+    </section>
+
+    <section class="panel">
+      <h2>Zonas de ritmo</h2>
+      <div class="zona z0"><span>Suave</span><div class="barra"><i id="z0b"></i></div><span id="z0t">00:00</span></div>
+      <div class="zona z1"><span>Medio</span><div class="barra"><i id="z1b"></i></div><span id="z1t">00:00</span></div>
+      <div class="zona z2"><span>Rápido</span><div class="barra"><i id="z2b"></i></div><span id="z2t">00:00</span></div>
+    </section>
+
+    <section class="panel">
+      <h2>Cadencia durante la sesión</h2>
+      <canvas id="serie" width="448" height="110" aria-label="Gráfico de cadencia de la sesión"></canvas>
+    </section>
+
+    <section id="resumen" class="panel" hidden></section>
+
+    <section class="panel">
+      <div class="dosc">
+        <label class="etq" for="rutina" style="align-self:center">Rutina</label>
+        <select id="rutina">
+          <option value="" selected>Libre</option>
+          <option value="hiit">HIIT 30/60 · 16 min</option>
+          <option value="piramide">Pirámide · 20 min</option>
+          <option value="sprints">Sprints · 12 min</option>
+          <option value="fondo">Fondo constante · 30 min</option>
+        </select>
+      </div>
+      <div class="dosc">
+        <label class="etq" for="fantasma" style="align-self:center">Rival</label>
+        <select id="fantasma">
+          <option value="mejor" selected>Mi mejor sesión</option>
+          <option value="anterior">Sesión anterior</option>
+          <option value="">Sin rival</option>
+        </select>
+      </div>
+      <div class="botones">
+        <button id="btnIniciar" class="principal">Iniciar</button>
+        <button id="btnTerminar" disabled>Terminar y guardar</button>
+      </div>
+    </section>
+  </section>
+
+  <!-- ==================== PROGRESO ==================== -->
+  <section id="vProgreso" class="vista" role="tabpanel" hidden>
+    <section class="panel">
+      <h2>Ruta virtual</h2>
+      <div class="dosc"><select id="rutaSel" aria-label="Elegir ruta"></select></div>
+      <div class="fila"><span id="rpTxt">–</span><span id="rpPct" class="grande">0 %</span></div>
+      <div id="rpBarra" class="barra"><i></i></div>
+      <div id="mapa" hidden></div>
+      <canvas id="rutaEsquema" width="448" height="220" hidden aria-label="Esquema de la ruta"></canvas>
+      <p id="rpSig" class="nota"></p>
+      <div id="rutaPropia" hidden>
+        <label class="campo" for="rpNombre">Nombre de tu ruta<input id="rpNombre" type="text" value="Mi ruta" style="width:170px"></label>
+        <label for="rpParadas" class="nota" style="display:block">Una parada por línea: <b>nombre, km</b> (opcional: <b>, latitud, longitud</b> para verla en el mapa). La primera en 0 km.</label>
+        <textarea id="rpParadas">Casa, 0
+Plaza de Armas, 8
+Mirador, 15
+Llegada, 25</textarea>
+        <button id="btnRutaPropia" class="chico" style="margin-top:8px;width:100%">Guardar mi ruta</button>
+      </div>
+      <p class="nota">Los km de todas tus sesiones se suman a la ruta elegida desde el día que la eliges. Al cambiar de ruta empiezas de cero en la nueva.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Racha</h2>
+      <div class="fila"><span>Racha actual</span><span id="rachaAct" class="grande">0 días</span></div>
+      <div class="fila"><span>Mejor racha</span><span id="rachaMejor">0 días</span></div>
+      <div id="racha" class="racha" aria-label="Días entrenados, últimas 17 semanas"></div>
+      <p class="nota">Cada columna es una semana (lunes arriba). Más intenso = más minutos ese día.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Progreso</h2>
+      <div class="dosc">
+        <select id="progPeriodo" aria-label="Periodo"><option value="sem" selected>Por semana</option><option value="mes">Por mes</option></select>
+        <select id="progMetrica" aria-label="Métrica"><option value="min" selected>Minutos</option><option value="km">Kilómetros</option><option value="cad">Cadencia media</option><option value="ses">Sesiones</option></select>
+      </div>
+      <canvas id="progGraf" width="448" height="160" aria-label="Gráfico de progreso"></canvas>
+      <p id="progTot" class="nota"></p>
+    </section>
+
+    <section class="panel">
+      <h2>Logros · <span id="logCuenta">0</span></h2>
+      <div id="logros" class="logros"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Historial y récords</h2>
+      <div id="records"></div>
+      <div id="hist" class="tabla"></div>
+      <div class="botones" style="margin-top:10px">
+        <button id="btnCsv" class="chico">Descargar CSV</button>
+        <button id="btnBorrar" class="chico">Borrar historial</button>
+      </div>
+    </section>
+  </section>
+
+  <!-- ==================== AJUSTES ==================== -->
+  <section id="vAjustes" class="vista" role="tabpanel" hidden>
+    <section class="panel">
+      <h2>Tú y la máquina</h2>
+      <label class="campo" for="peso">Peso (kg)<input id="peso" type="number" min="30" max="200" step="1" value="70" inputmode="numeric"></label>
+      <label class="campo" for="resist">Resistencia
+        <select id="resist"><option value="4.5">Baja</option><option value="5.5" selected>Media</option><option value="7">Alta</option></select>
+      </label>
+      <label class="campo" for="largo">Largo de zancada (m)<input id="largo" type="number" min="0.2" max="1" step="0.01" value="0.45" inputmode="decimal"></label>
+    </section>
+    <section class="panel">
+      <h2>Meta y zonas</h2>
+      <label class="campo" for="metaTipo">Meta de sesión
+        <select id="metaTipo"><option value="" selected>Sin meta</option><option value="min">Minutos activos</option><option value="pasos">Zancadas</option><option value="kcal">Calorías</option></select>
+      </label>
+      <label class="campo" for="metaVal">Valor de la meta<input id="metaVal" type="number" min="1" step="1" value="20" inputmode="numeric"></label>
+      <label class="campo" for="zMedio">Ritmo medio desde<input id="zMedio" type="number" min="60" max="220" step="5" value="135" inputmode="numeric"></label>
+      <label class="campo" for="zRapido">Ritmo rápido desde<input id="zRapido" type="number" min="60" max="240" step="5" value="155" inputmode="numeric"></label>
+      <label class="campo" for="colorZona">Fondo de color por zona
+        <select id="colorZona"><option value="1" selected>Sí</option><option value="0">No</option></select>
+      </label>
+    </section>
+    <section class="panel">
+      <h2>Voz</h2>
+      <label class="campo" for="voz">Avisos por voz
+        <select id="voz"><option value="1" selected>Activados</option><option value="0">Desactivados</option></select>
+      </label>
+      <label class="campo" for="vozMin">Resumen cada (min)<input id="vozMin" type="number" min="1" max="60" step="1" value="7" inputmode="numeric"></label>
+      <label class="campo" for="vozZona">Avisar cambio de zona
+        <select id="vozZona"><option value="1" selected>Sí</option><option value="0">No</option></select>
+      </label>
+      <label class="campo" for="vozBaja">Avisar si la cadencia baja de<input id="vozBaja" type="number" min="0" max="200" step="5" value="120" inputmode="numeric"></label>
+      <button id="btnVozPrueba" class="chico" type="button" style="margin-top:10px;width:100%">Probar la voz</button>
+      <p class="nota">Con una rutina activa, el aviso de zona se apaga solo: la rutina ya te dice qué ritmo llevar.</p>
+    </section>
+    <section class="panel">
+      <h2>Sensor y pulso</h2>
+      <label class="campo" for="eje">Eje del sensor
+        <select id="eje"><option value="x" selected>X</option><option value="y">Y</option><option value="z">Z</option></select>
+      </label>
+      <label class="campo" for="sens">Sensibilidad
+        <select id="sens"><option value="0.05">Alta</option><option value="0.08" selected>Normal</option><option value="0.15">Baja</option></select>
+      </label>
+      <button id="btnPulso" class="chico" style="margin-top:10px;width:100%">Conectar banda de pulso</button>
+      <p class="nota">Coloca el móvil en la consola igual que en la prueba. Si cuenta de más o de menos, prueba otro eje. Distancia, velocidad y calorías son aproximadas: la máquina no informa su resistencia ni su recorrido real.</p>
+    </section>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  var FS = 50;                 // frecuencia fija a la que se remuestrea la señal (Hz)
+  var MIN_ENTRE_PASOS = 0.25;  // segundos
+  var PARADA = 3;              // segundos sin zancadas para pausar el tiempo activo
+  var CADA_SERIE = 5;          // segundos entre puntos del gráfico de sesión
+  var CADA_CURVA = 10;         // segundos activos entre puntos guardados para el fantasma
+  var $ = function(id){ return document.getElementById(id); };
+  var num = function(id, def){ var v = parseFloat($(id).value); return isFinite(v) ? v : def; };
+
+  // ---------- almacenamiento local (puede fallar: siempre con try/catch) ----------
+  function leer(k, def){ try{ var v = localStorage.getItem(k); return v === null ? def : JSON.parse(v); }catch(e){ return def; } }
+  function guardar(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+
+  var cfg = leer("eliptica_cfg", {});
+  ["peso","resist","largo","metaTipo","metaVal","zMedio","zRapido","colorZona","voz","vozMin","vozZona","vozBaja","eje","sens","rutina","fantasma"].forEach(function(id){
+    if (cfg[id] !== undefined) $(id).value = cfg[id];
+    $(id).addEventListener("change", function(){ cfg[id] = $(id).value; guardar("eliptica_cfg", cfg); });
+  });
+
+  // ---------- pestañas ----------
+  var VISTAS = { Entrenar: "vEntrenar", Progreso: "vProgreso", Ajustes: "vAjustes" };
+  function verPestana(nombre){
+    Object.keys(VISTAS).forEach(function(k){
+      $("tab"+k).setAttribute("aria-selected", k === nombre ? "true" : "false");
+      $(VISTAS[k]).hidden = k !== nombre;
+    });
+    if (nombre === "Progreso") pintarProgreso();
+  }
+  Object.keys(VISTAS).forEach(function(k){ $("tab"+k).addEventListener("click", function(){ verPestana(k); }); });
+
+  // ---------- filtros (pasa-banda 1.3–3.2 Hz: deja pasar el ritmo de zancada) ----------
+  function biquad(tipo, f0, q){
+    var w = 2*Math.PI*f0/FS, a = Math.sin(w)/(2*q), c = Math.cos(w), b;
+    if (tipo === "lp") b = [(1-c)/2, 1-c, (1-c)/2]; else b = [(1+c)/2, -(1+c), (1+c)/2];
+    var a0 = 1+a;
+    var k = [b[0]/a0, b[1]/a0, b[2]/a0, -2*c/a0, (1-a)/a0];
+    var x1=0,x2=0,y1=0,y2=0;
+    return function(x){ var y = k[0]*x + k[1]*x1 + k[2]*x2 - k[3]*y1 - k[4]*y2; x2=x1; x1=x; y2=y1; y1=y; return y; };
+  }
+
+  // ---------- rutinas de intervalos (zona objetivo: 0 suave, 1 medio, 2 rápido) ----------
+  function repetir(n, bloque){ var r = []; for (var i=0;i<n;i++) r = r.concat(bloque); return r; }
+  var RUTINAS = {
+    hiit:     { nombre: "HIIT 30/60", segs: [[0,180]].concat(repetir(8, [[2,30],[0,60]]), [[0,60]]) },
+    piramide: { nombre: "Pirámide", segs: [[0,180],[1,120],[2,60],[0,60],[1,180],[2,120],[0,60],[1,180],[2,60],[0,180]] },
+    sprints:  { nombre: "Sprints", segs: [[0,180]].concat(repetir(6, [[2,20],[0,40]]), [[0,180]]) },
+    fondo:    { nombre: "Fondo constante", segs: [[0,300],[1,1200],[0,300]] }
+  };
+  var ZONA_TXT = ["Suave", "Medio", "Rápido"];
+
+  // ---------- rutas virtuales: [nombre, km, latitud, longitud] (km aproximados por carretera o sendero) ----------
+  var RUTAS = {
+    costaverde: { nombre: "Costa Verde de Lima", paradas: [
+      ["Chorrillos",0,-12.1700,-77.0280],["Barranco",4,-12.1490,-77.0250],["Miraflores",8,-12.1260,-77.0400],
+      ["Magdalena",13,-12.0950,-77.0750],["San Miguel",17,-12.0820,-77.1000],["La Punta",24,-12.0720,-77.1640]] },
+    caminoinca: { nombre: "Camino Inca a Machu Picchu", paradas: [
+      ["Km 82 · Piscacucho",0,-13.2150,-72.3900],["Wayllabamba",12,-13.2580,-72.4280],["Abra Warmiwañusca",16,-13.2850,-72.4700],
+      ["Runkurakay",22,-13.2650,-72.4900],["Sayacmarca",25,-13.2470,-72.5050],["Phuyupatamarca",31,-13.2200,-72.5250],
+      ["Wiñay Wayna",37,-13.1925,-72.5355],["Inti Punku",41,-13.1690,-72.5390],["Machu Picchu",43,-13.1631,-72.5450]] },
+    trujillo: { nombre: "Lima a Trujillo", paradas: [
+      ["Lima",0,-12.0464,-77.0428],["Huacho",150,-11.1070,-77.6050],["Barranca",195,-10.7500,-77.7600],
+      ["Casma",370,-9.4700,-78.3000],["Chimbote",430,-9.0750,-78.5930],["Trujillo",560,-8.1120,-79.0290]] },
+    cusco: { nombre: "Lima a Cusco por Nazca", paradas: [
+      ["Lima",0,-12.0464,-77.0428],["Pisco",235,-13.7100,-76.2000],["Ica",305,-14.0680,-75.7280],["Nazca",450,-14.8300,-74.9400],
+      ["Puquio",605,-14.7000,-74.1300],["Chalhuanca",790,-14.2900,-73.2400],["Abancay",920,-13.6360,-72.8810],["Cusco",1110,-13.5320,-71.9670]] },
+    santiago: { nombre: "Camino de Santiago francés", paradas: [
+      ["Saint-Jean-Pied-de-Port",0,43.1630,-1.2380],["Pamplona",68,42.8120,-1.6450],["Logroño",155,42.4650,-2.4450],
+      ["Burgos",275,42.3430,-3.6960],["León",455,42.5980,-5.5670],["Astorga",505,42.4580,-6.0560],["Ponferrada",560,42.5460,-6.5980],
+      ["Sarria",665,42.7810,-7.4140],["Santiago de Compostela",780,42.8800,-8.5450]] }
+  };
+  function rutaPropia(){
+    var p = leer("eliptica_ruta_propia", null);
+    return p && p.paradas && p.paradas.length >= 2 ? p : null;
+  }
+  function rutaActual(){
+    var est = leer("eliptica_ruta", { id: "costaverde", desde: 0, completadas: [] });
+    var r = est.id === "propia" ? rutaPropia() : RUTAS[est.id];
+    if (!r){ est.id = "costaverde"; r = RUTAS.costaverde; }
+    return { est: est, ruta: r };
+  }
+  function largoRuta(r){ return r.paradas[r.paradas.length-1][1]; }
+  function kmEnRuta(est, extra){
+    var h = historial(), t = 0;
+    for (var i = est.desde; i < h.length; i++) t += h[i].km || 0;
+    return t + (extra || 0);
+  }
+  function siguienteParada(r, km){
+    for (var i=0;i<r.paradas.length;i++) if (r.paradas[i][1] > km) return i;
+    return -1;
+  }
+  function posicion(r, km){       // punto interpolado sobre la ruta para el mapa
+    var p = r.paradas;
+    if (km <= 0) return [p[0][2], p[0][3]];
+    for (var i=1;i<p.length;i++){
+      if (km <= p[i][1]){
+        var f = (km - p[i-1][1]) / ((p[i][1] - p[i-1][1]) || 1);
+        return [p[i-1][2] + (p[i][2]-p[i-1][2])*f, p[i-1][3] + (p[i][3]-p[i-1][3])*f];
+      }
+    }
+    return [p[p.length-1][2], p[p.length-1][3]];
+  }
+  function tieneCoords(r){ return r.paradas.every(function(p){ return isFinite(p[2]) && isFinite(p[3]); }); }
+  function kmTxt(v){ return v < 10 ? v.toFixed(1) : String(Math.round(v)); }
+
+  // ---------- estado de la sesión ----------
+  var S = null;
+  function nuevaSesion(){
+    var s = { inicio: Date.now(), fin: null, pasos: 0, activo: 0, kcal: 0, tiemposPaso: [],
+      filtros: [biquad("hp",1.3,0.707), biquad("lp",3.2,0.707), biquad("lp",3.2,0.707)],
+      ms: 0, armado: false, ultPaso: -9, t: 0, tPrev: null, vPrev: 0, tSig: null,
+      traza: [], eventos: 0, corriendo: true,
+      cadMax: 0, zonas: [0,0,0], serie: [], sigSerie: CADA_SERIE,
+      curva: [0], sigCurva: CADA_CURVA,
+      pausas: 0, enPausa: false,
+      ints: [], intSum: 0, intN: 0, regSum: 0, regN: 0,
+      fcSum: 0, fcN: 0, fcMax: 0, metaHecha: false,
+      vozSig: 0, zonaVoz: -1, zonaCand: -1, zonaDesde: 0, ultAvisoZona: -99, bajaDesde: null, bajaAvisada: false,
+      fantasma: null, fanLider: null, fanUltAviso: -99, fanFinAvisado: false, fanFin: null,
+      rutina: null, paradaVoz: -1 };
+    var rid = $("rutina").value;
+    if (RUTINAS[rid]){
+      var segs = RUTINAS[rid].segs, ini = 0;
+      s.rutina = { id: rid, nombre: RUTINAS[rid].nombre, segs: segs.map(function(g){ var o = { z: g[0], dur: g[1], ini: ini }; ini += g[1]; return o; }),
+        total: ini, idx: -1, enObj: 0, medido: 0, hecha: false, avisoPrep: -1 };
+    }
+    s.fantasma = elegirFantasma($("fantasma").value);
+    var ra = rutaActual();
+    s.rutaKm0 = kmEnRuta(ra.est, 0);
+    s.paradaVoz = siguienteParada(ra.ruta, s.rutaKm0);
+    return s;
+  }
+
+  function cadencia(){
+    var a = S.tiemposPaso;
+    if (a.length < 3 || S.t - S.ultPaso > PARADA) return 0;
+    var n = Math.min(a.length, 9);
+    var dur = a[a.length-1] - a[a.length-n];
+    return dur > 0 ? (n-1)/dur*60 : 0;
+  }
+  function cadMedia(s){ return s.activo > 0 ? s.pasos/s.activo*60 : 0; }
+  function distancia(s){ return s.pasos * num("largo",0.45) / 1000; }
+  function regularidad(s){
+    if (s.regN < 6 || s.intN === 0) return null;
+    var r = 100 * (1 - (s.regSum/s.regN) / (s.intSum/s.intN));
+    return Math.max(0, Math.min(100, r));
+  }
+  function totalSeg(s){ return ((s.fin || Date.now()) - s.inicio) / 1000; }
+  function zonaDe(c){ return c >= num("zRapido",155) ? 2 : c >= num("zMedio",135) ? 1 : 0; }
+
+  // Procesa una muestra ya remuestreada a 50 Hz
+  function muestra(v){
+    var s = S, dt = 1/FS;
+    s.t += dt;
+    for (var i=0;i<s.filtros.length;i++) v = s.filtros[i](v);
+    s.ms += (v*v - s.ms) / (3*FS);
+    var umbral = Math.max(num("sens",0.08), 0.3*Math.sqrt(s.ms));
+    if (v < -umbral) s.armado = true;
+    else if (v > umbral && s.armado && s.t - s.ultPaso > MIN_ENTRE_PASOS){
+      var intervalo = s.t - s.ultPaso;
+      s.armado = false; s.ultPaso = s.t; s.pasos++;
+      s.tiemposPaso.push(s.t); if (s.tiemposPaso.length > 12) s.tiemposPaso.shift();
+      if (intervalo < 1.5){       // regularidad: compara cada zancada con la del mismo pie (dos atrás)
+        s.ints.push(intervalo); if (s.ints.length > 3) s.ints.shift();
+        s.intSum += intervalo; s.intN++;
+        if (s.ints.length === 3){ s.regSum += Math.abs(s.ints[2] - s.ints[0]); s.regN++; }
+      } else s.ints = [];
+    }
+    var activo = s.t - s.ultPaso < PARADA && s.pasos > 0;
+    if (activo){
+      var c = cadencia();
+      s.enPausa = false;
+      s.activo += dt;
+      var met = num("resist",5.5) * Math.min(1.4, Math.max(0.6, c/140));
+      s.kcal += met * num("peso",70) * 3.5 / 200 / 60 * dt;
+      if (c > 0){
+        s.zonas[zonaDe(c)] += dt;
+        if (s.tiemposPaso.length >= 9 && c > s.cadMax) s.cadMax = c;
+      }
+      if (s.activo >= s.sigCurva){ s.curva.push(s.pasos); s.sigCurva += CADA_CURVA; }
+      if (s.fantasma && s.fanFin === null && s.activo >= s.fantasma.seg) s.fanFin = s.pasos;   // la carrera termina cuando el fantasma termina
+      if (s.rutina && !s.rutina.hecha) pasoRutina(s, c, dt);
+    } else if (s.pasos > 0 && !s.enPausa){ s.enPausa = true; s.pausas++; }
+    s.traza.push(v); if (s.traza.length > FS*6) s.traza.shift();
+  }
+
+  // Avanza la rutina con el tiempo activo y mide si vas en la zona pedida
+  function pasoRutina(s, c, dt){
+    var r = s.rutina, t = s.activo;
+    if (t >= r.total){ r.hecha = true; r.idx = r.segs.length; return; }
+    var i = r.idx < 0 ? 0 : r.idx;
+    while (i < r.segs.length-1 && t >= r.segs[i].ini + r.segs[i].dur) i++;
+    if (i !== r.idx){ r.idx = i; r.cambio = true; }
+    var g = r.segs[i];
+    if (t - g.ini > 5 && c > 0){     // los primeros 5 s de cada tramo son para cambiar de ritmo
+      r.medido += dt;
+      if (zonaDe(c) === g.z) r.enObj += dt;
+    }
+  }
+
+  // ---------- rival fantasma ----------
+  function elegirFantasma(modo){
+    if (!modo) return null;
+    var h = historial().filter(function(r){ return r.curva && r.curva.length > 18; });   // al menos 3 minutos
+    if (!h.length) return null;
+    var g;
+    if (modo === "anterior") g = h[h.length-1];
+    else g = h.reduce(function(a, b){ return (b.pasos/b.seg) > (a.pasos/a.seg) ? b : a; });
+    return { fecha: g.fecha, curva: g.curva, seg: g.seg, pasos: g.pasos };
+  }
+  function pasosFantasma(f, t){
+    var x = t / CADA_CURVA, i = Math.floor(x);
+    if (i >= f.curva.length-1) return f.curva[f.curva.length-1];
+    return f.curva[i] + (f.curva[i+1] - f.curva[i]) * (x - i);
+  }
+
+  // Evento del sensor: se remuestrea por interpolación lineal a 50 Hz
+  function alMover(e){
+    if (!S || !S.corriendo) return;
+    var acc = e.acceleration && e.acceleration.x !== null ? e.acceleration : e.accelerationIncludingGravity;
+    if (!acc || acc[$("eje").value] === null || acc[$("eje").value] === undefined) return;
+    var v = acc[$("eje").value], t = performance.now()/1000;
+    S.eventos++;
+    if (S.tPrev === null){ S.tPrev = t; S.vPrev = v; S.tSig = t; return; }
+    if (t - S.tPrev > 1){ S.tSig = t; }                 // hueco largo: no rellenar
+    while (S.tSig <= t){
+      var f = (S.tSig - S.tPrev) / (t - S.tPrev || 1);
+      muestra(S.vPrev + (v - S.vPrev)*f);
+      S.tSig += 1/FS;
+    }
+    S.tPrev = t; S.vPrev = v;
+  }
+
+  // ---------- voz (la del propio móvil) ----------
+  var vozEs = null;
+  function elegirVoz(){
+    try{
+      var vs = window.speechSynthesis.getVoices() || [];
+      vozEs = vs.filter(function(v){ return /^es[-_](PE|419|US|MX)/i.test(v.lang); })[0] ||
+              vs.filter(function(v){ return /^es/i.test(v.lang); })[0] || null;
+    }catch(e){}
+  }
+  if (window.speechSynthesis){ elegirVoz(); try{ window.speechSynthesis.onvoiceschanged = elegirVoz; }catch(e){} }
+  function decir(txt, forzar){
+    if (!forzar && $("voz").value !== "1") return;
+    try{
+      if (!window.speechSynthesis) return;
+      var u = new SpeechSynthesisUtterance(txt);
+      u.lang = vozEs ? vozEs.lang : "es-ES"; if (vozEs) u.voice = vozEs;
+      window.speechSynthesis.speak(u);
+    }catch(e){}
+  }
+
+  // Se llama en cada refresco de pantalla mientras la sesión corre
+  function avisosVoz(s, c, activo){
+    var dif = s.fantasma ? Math.round(s.pasos - pasosFantasma(s.fantasma, s.activo)) : null;
+    // 1) resumen cada N minutos de tiempo activo
+    var cada = Math.max(1, num("vozMin",7)) * 60;
+    if (s.vozSig === 0) s.vozSig = cada;
+    if (s.activo >= s.vozSig){
+      var min = Math.round(s.vozSig/60), txt = min + (min === 1 ? " minuto. " : " minutos. ") + "Cadencia " + Math.round(c || cadMedia(s)) + ". " + Math.round(s.kcal) + " calorías.";
+      if (dif !== null && s.activo <= s.fantasma.seg) txt += dif >= 0 ? " Vas " + dif + " zancadas delante del fantasma." : " El fantasma te lleva " + (-dif) + " zancadas.";
+      decir(txt);
+      s.vozSig += cada;
+    }
+    // 2) rutina: anuncia cada tramo y avisa 5 s antes de un tramo rápido
+    var r = s.rutina;
+    if (r){
+      if (r.cambio && r.idx < r.segs.length){
+        r.cambio = false;
+        var g = r.segs[r.idx];
+        decir(ZONA_TXT[g.z] + ", " + duracionHablada(g.dur) + ".");
+      }
+      if (r.idx >= 0 && r.idx < r.segs.length-1){
+        var sig = r.segs[r.idx+1], resta = sig.ini - s.activo;
+        if (sig.z === 2 && resta <= 5 && r.avisoPrep !== r.idx+1){ r.avisoPrep = r.idx+1; decir("Prepárate."); }
+      }
+      if (r.hecha && !r.anunciada){
+        r.anunciada = true;
+        decir("Rutina completada. Cumpliste el " + Math.round(cumplimiento(r)) + " por ciento.");
+      }
+    }
+    // 3) fantasma: avisa cuando cambia quién va delante (con margen de 10 zancadas)
+    if (dif !== null){
+      if (s.activo <= s.fantasma.seg){
+        var lider = dif > 10 ? "yo" : dif < -10 ? "fan" : s.fanLider;
+        if (lider !== s.fanLider && s.fanLider !== null && s.activo - s.fanUltAviso > 30){
+          decir(lider === "yo" ? "Pasaste al fantasma." : "El fantasma te pasó.");
+          s.fanUltAviso = s.activo;
+        }
+        s.fanLider = lider;
+      } else if (!s.fanFinAvisado && s.fanFin !== null){
+        s.fanFinAvisado = true;
+        var fin = s.fanFin - s.fantasma.pasos;
+        decir(fin > 0 ? "Le ganaste al fantasma por " + fin + " zancadas." : fin === 0 ? "Empate con el fantasma." : "El fantasma ganó por " + (-fin) + " zancadas.");
+      }
+    }
+    // 4) paradas de la ruta virtual
+    var ra = rutaActual(), km = s.rutaKm0 + distancia(s);
+    if (s.paradaVoz >= 0 && km >= ra.ruta.paradas[s.paradaVoz][1]){
+      var p = ra.ruta.paradas[s.paradaVoz];
+      s.paradaVoz = s.paradaVoz + 1 < ra.ruta.paradas.length ? s.paradaVoz + 1 : -1;
+      decir(s.paradaVoz === -1 ? "Llegaste a " + p[0] + ". Ruta completada." : "Llegaste a " + p[0] + ".");
+    }
+    if (!activo || c <= 0){ s.zonaCand = -1; s.bajaDesde = null; return; }
+    // 5) cambio de zona (sin rutina): solo si la nueva zona se mantiene 10 s y han pasado 30 s del último aviso
+    if ($("vozZona").value === "1" && !(r && !r.hecha)){
+      var z = zonaDe(c);
+      if (z !== s.zonaCand){ s.zonaCand = z; s.zonaDesde = s.activo; }
+      if (s.zonaVoz === -1 && s.activo - s.zonaDesde >= 10){ s.zonaVoz = z; }
+      else if (z !== s.zonaVoz && s.zonaVoz !== -1 && s.activo - s.zonaDesde >= 10 && s.activo - s.ultAvisoZona >= 30){
+        s.zonaVoz = z; s.ultAvisoZona = s.activo; decir(["Zona suave", "Zona media", "Zona rápida"][z]);
+      }
+    }
+    // 6) cadencia baja: 15 s seguidos por debajo del límite (fuera de tramos suaves de la rutina)
+    var lim = num("vozBaja",0), suaveRut = r && !r.hecha && r.idx >= 0 && r.segs[r.idx] && r.segs[r.idx].z === 0;
+    if (lim > 0 && !suaveRut){
+      if (c < lim){
+        if (s.bajaDesde === null) s.bajaDesde = s.activo;
+        if (!s.bajaAvisada && s.activo - s.bajaDesde >= 15){ s.bajaAvisada = true; decir("Cadencia baja. " + Math.round(c)); }
+      } else if (c >= lim + 5){ s.bajaDesde = null; s.bajaAvisada = false; }
+    }
+  }
+  function duracionHablada(seg){
+    if (seg < 60) return seg + " segundos";
+    var m = Math.floor(seg/60), r = seg%60;
+    return (m === 1 ? "1 minuto" : m + " minutos") + (r ? " y " + r + " segundos" : "");
+  }
+  function cumplimiento(r){ return r.medido > 0 ? r.enObj / r.medido * 100 : 0; }
+
+  // ---------- pulso por Bluetooth (banda o reloj que comparta el pulso) ----------
+  var fcActual = null;
+  $("btnPulso").addEventListener("click", function(){
+    if (!navigator.bluetooth){ $("fcInfo").textContent = "Bluetooth no disponible"; $("btnPulso").textContent = "Este navegador no tiene Bluetooth web"; return; }
+    $("fcInfo").textContent = "buscando…";
+    navigator.bluetooth.requestDevice({ filters: [{ services: ["heart_rate"] }] })
+      .then(function(d){
+        d.addEventListener("gattserverdisconnected", function(){ fcActual = null; $("fcInfo").textContent = "banda desconectada"; $("fc").textContent = "–"; });
+        return d.gatt.connect();
+      })
+      .then(function(g){ return g.getPrimaryService("heart_rate"); })
+      .then(function(sv){ return sv.getCharacteristic("heart_rate_measurement"); })
+      .then(function(ch){
+        ch.addEventListener("characteristicvaluechanged", function(ev){
+          var dv = ev.target.value;
+          fcActual = (dv.getUint8(0) & 1) ? dv.getUint16(1, true) : dv.getUint8(1);
+          if (S && S.corriendo && fcActual > 0){ S.fcSum += fcActual; S.fcN++; if (fcActual > S.fcMax) S.fcMax = fcActual; }
+        });
+        return ch.startNotifications();
+      })
+      .then(function(){ $("fcInfo").textContent = "conectada"; $("btnPulso").textContent = "Banda conectada"; })
+      .catch(function(){ $("fcInfo").textContent = "no se conectó"; });
+  });
+
+  // ---------- pantalla de entrenamiento ----------
+  function mmss(seg){ seg = Math.max(0, Math.floor(seg)); var m = Math.floor(seg/60), s = seg%60; return (m<10?"0":"")+m+":"+(s<10?"0":"")+s; }
+  function estado(txt, clase){ var el = $("estado"); el.textContent = txt; el.className = "estado" + (clase ? " "+clase : ""); }
+  function aviso(txt){ var a = $("aviso"); if (txt){ a.textContent = txt; a.hidden = false; } else a.hidden = true; }
+
+  var ctx = $("graf").getContext("2d"), ctx2 = $("serie").getContext("2d");
+  function dibujarSenal(){
+    var c = $("graf"), w = c.width, h = c.height, i;
+    ctx.clearRect(0,0,w,h);
+    ctx.strokeStyle = "#2c353e"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0,h/2); ctx.lineTo(w,h/2); ctx.stroke();
+    if (!S || S.traza.length < 2) return;
+    var max = 0.2; for (i=0;i<S.traza.length;i++) max = Math.max(max, Math.abs(S.traza[i]));
+    ctx.strokeStyle = "#f2b23a"; ctx.lineWidth = 2; ctx.beginPath();
+    for (i=0;i<S.traza.length;i++){
+      var x = i/(FS*6)*w, y = h/2 - S.traza[i]/max*(h/2-3);
+      if (i) ctx.lineTo(x,y); else ctx.moveTo(x,y);
+    }
+    ctx.stroke();
+  }
+  function dibujarSerie(){
+    var c = $("serie"), w = c.width, h = c.height, izq = 30, aba = 4, arr = 6, i;
+    ctx2.clearRect(0,0,w,h);
+    var datos = S ? S.serie : [];
+    var tope = Math.max(180, num("zRapido",155) + 20);
+    for (i=0;i<datos.length;i++) tope = Math.max(tope, datos[i] + 10);
+    var Y = function(v){ return h - aba - v/tope*(h-aba-arr); };
+    ctx2.font = "11px sans-serif"; ctx2.fillStyle = "#8d9aa6"; ctx2.textAlign = "right"; ctx2.textBaseline = "middle";
+    [num("zMedio",135), num("zRapido",155)].forEach(function(v){
+      ctx2.strokeStyle = "#2c353e"; ctx2.lineWidth = 1; ctx2.beginPath(); ctx2.moveTo(izq, Y(v)); ctx2.lineTo(w, Y(v)); ctx2.stroke();
+      ctx2.fillText(String(v), izq-4, Y(v));
+    });
+    if (datos.length < 2) return;
+    var paso = (w-izq) / Math.max(datos.length-1, 59);   // primeros 5 minutos a escala fija, luego se comprime
+    ctx2.beginPath();
+    for (i=0;i<datos.length;i++){ var x = izq + i*paso; if (i) ctx2.lineTo(x, Y(datos[i])); else ctx2.moveTo(x, Y(datos[i])); }
+    ctx2.strokeStyle = "#f2b23a"; ctx2.lineWidth = 2; ctx2.stroke();
+    ctx2.lineTo(izq + (datos.length-1)*paso, h-aba); ctx2.lineTo(izq, h-aba); ctx2.closePath();
+    ctx2.fillStyle = "rgba(242,178,58,.14)"; ctx2.fill();
+    ctx2.beginPath(); ctx2.arc(izq + (datos.length-1)*paso, Y(datos[datos.length-1]), 3.5, 0, 7); ctx2.fillStyle = "#f2b23a"; ctx2.fill();
+  }
+
+  function metaProgreso(s){
+    var tipo = $("metaTipo").value, obj = num("metaVal",0);
+    if (!tipo || obj <= 0) return null;
+    var val = tipo === "min" ? s.activo/60 : tipo === "pasos" ? s.pasos : s.kcal;
+    var nombre = tipo === "min" ? "min activos" : tipo === "pasos" ? "zancadas" : "kcal";
+    return { pct: Math.min(1, val/obj), txt: "Meta: " + (tipo === "min" ? val.toFixed(1) : Math.round(val)) + " de " + obj + " " + nombre };
+  }
+
+  var audio = null;
+  function pitido(){
+    try{
+      if (!audio) return;
+      var o = audio.createOscillator(), g = audio.createGain();
+      o.frequency.value = 880; g.gain.value = 0.15; o.connect(g); g.connect(audio.destination);
+      o.start(); o.stop(audio.currentTime + 0.35);
+    }catch(e){}
+  }
+
+  function pintarFantasma(s){
+    var f = s.fantasma;
+    $("fanBox").hidden = !f;
+    if (!f) return;
+    $("fanNombre").textContent = "· " + f.fecha;
+    var terminada = s.fanFin !== null;
+    var dif = terminada ? s.fanFin - f.pasos : Math.round(s.pasos - pasosFantasma(f, s.activo));
+    $("fanDif").textContent = (dif > 0 ? "+" : dif < 0 ? "−" : "") + Math.abs(dif);
+    $("fanDif").className = "grande " + (dif > 0 ? "sube" : dif < 0 ? "baja" : "");
+    var esc = Math.max(40, Math.abs(dif) * 1.3);       // la pista centra al que va detrás
+    $("yoPunto").style.left = (50 + Math.max(-45, Math.min(45, dif/esc*45))) + "%";
+    $("fanPunto").style.left = (50 - Math.max(-45, Math.min(45, dif/esc*45))) + "%";
+    if (s.pasos === 0) $("fanTxt").textContent = "Empieza a pedalear para competir.";
+    else if (terminada) $("fanTxt").textContent = dif > 0 ? "Carrera terminada: le ganaste al fantasma en " + mmss(f.seg) + "." : dif === 0 ? "Carrera terminada: empate." : "Carrera terminada: el fantasma ganó. La próxima es tuya.";
+    else $("fanTxt").textContent = (dif >= 0 ? "Vas delante del fantasma." : "El fantasma va delante. ¡Acelera!") + " Faltan " + mmss(f.seg - s.activo) + ".";
+  }
+
+  function pintarRutina(s, c){
+    var r = s.rutina;
+    $("rutBox").hidden = !r;
+    if (!r) return;
+    $("rutNombre").textContent = r.nombre;
+    if (r.hecha){
+      $("rutAhora").textContent = "Completada"; $("rutResta").textContent = "";
+      $("rutSig").textContent = "Puedes seguir pedaleando libre.";
+      $("rutChip").textContent = "Fin"; $("rutChip").className = "chip ok";
+    } else {
+      var i = Math.max(0, r.idx), g = r.segs[i], sig = r.segs[i+1];
+      $("rutAhora").textContent = ZONA_TXT[g.z];
+      $("rutAhora").style.color = ["#5fa8e0","#f2b23a","#ef6b5e"][g.z];
+      $("rutResta").textContent = mmss(g.ini + g.dur - s.activo);
+      $("rutSig").textContent = sig ? "Luego: " + ZONA_TXT[sig.z].toLowerCase() + " " + mmss(sig.dur) : "Último tramo";
+      var en = c > 0 && zonaDe(c) === g.z;
+      $("rutChip").textContent = c > 0 ? (en ? "En ritmo" : (zonaDe(c) < g.z ? "Sube el ritmo" : "Baja el ritmo")) : "Pedalea";
+      $("rutChip").className = "chip " + (c > 0 ? (en ? "ok" : "mal") : "");
+    }
+    $("rutCumple").textContent = r.medido > 10 ? "cumplimiento " + Math.round(cumplimiento(r)) + " %" : "";
+    var cont = $("rutSegs");
+    if (cont.childElementCount !== r.segs.length){
+      cont.innerHTML = r.segs.map(function(g){ return '<i class="s' + g.z + '" style="flex:' + g.dur + '"></i>'; }).join("");
+    }
+    for (var k=0;k<cont.children.length;k++) cont.children[k].className = "s" + r.segs[k].z + (k < r.idx || r.hecha ? " hecho" : "");
+  }
+
+  var rmParadasHechas = "";
+  function pintarRutaMini(extraKm){
+    var ra = rutaActual(), r = ra.ruta, L = largoRuta(r), km = Math.min(L, kmEnRuta(ra.est, extraKm));
+    $("rmNombre").textContent = r.nombre;
+    $("rmKm").textContent = kmTxt(km) + " de " + kmTxt(L) + " km";
+    $("rmHecho").style.width = (km/L*100) + "%";
+    var firma = r.nombre + "|" + r.paradas.length;
+    if (rmParadasHechas !== firma){
+      rmParadasHechas = firma;
+      var cont = $("rmParadas");
+      cont.innerHTML = '<div class="linea"></div><div class="hecho" id="rmHecho" style="width:' + (km/L*100) + '%"></div>' +
+        r.paradas.map(function(p){ return '<b style="left:' + (p[1]/L*100) + '%" title="' + p[0] + '"></b>'; }).join("");
+    }
+    var bs = $("rmParadas").getElementsByTagName("b");
+    for (var i=0;i<bs.length;i++) bs[i].className = r.paradas[i][1] <= km ? "ok" : "";
+    var n = siguienteParada(r, km);
+    $("rmSig").textContent = n < 0 ? "¡Ruta completada! Elige otra en Progreso." : "Próxima parada: " + r.paradas[n][0] + " en " + kmTxt(r.paradas[n][1] - km) + " km";
+  }
+
+  function refrescar(){
+    if (S){
+      var s = S, tot = totalSeg(s), c = s.corriendo ? cadencia() : 0, zt = s.zonas[0]+s.zonas[1]+s.zonas[2], i;
+      var activo = s.corriendo && s.t - s.ultPaso < PARADA && s.pasos > 0;
+      $("cad").textContent = Math.round(c);
+      $("tiempo").textContent = mmss(s.activo);
+      $("total").textContent = "total " + mmss(tot);
+      $("pasos").textContent = s.pasos;
+      $("vueltas").textContent = Math.floor(s.pasos/2) + " vueltas";
+      $("kcal").textContent = Math.round(s.kcal);
+      $("cadMed").textContent = Math.round(cadMedia(s));
+      $("cadMax").textContent = "máx " + Math.round(s.cadMax);
+      $("km").textContent = distancia(s).toFixed(2);
+      $("kmh").textContent = (c * num("largo",0.45) * 60 / 1000).toFixed(1);
+      $("pausas").textContent = s.pausas;
+      $("parado").textContent = mmss(tot - s.activo) + " parado";
+      var r = regularidad(s); $("reg").textContent = r === null ? "–" : Math.round(r);
+      $("fc").textContent = fcActual ? fcActual : "–";
+      if (s.fcN) $("fcInfo").textContent = "med " + Math.round(s.fcSum/s.fcN) + " · máx " + s.fcMax;
+      for (i=0;i<3;i++){ $("z"+i+"b").style.width = (zt ? s.zonas[i]/zt*100 : 0) + "%"; $("z"+i+"t").textContent = mmss(s.zonas[i]); }
+
+      if ($("colorZona").value === "1" && activo && c > 0) document.body.setAttribute("data-zona", String(zonaDe(c)));
+      else document.body.removeAttribute("data-zona");
+
+      var m = metaProgreso(s);
+      $("metaBox").hidden = !m;
+      if (m){
+        $("metaTxt").textContent = m.txt; $("metaPct").textContent = Math.round(m.pct*100) + " %";
+        $("metaBarra").firstElementChild.style.width = (m.pct*100) + "%";
+        $("metaBarra").className = "barra" + (m.pct >= 1 ? " hecha" : "");
+        if (m.pct >= 1 && !s.metaHecha && s.corriendo){ s.metaHecha = true; pitido(); decir("Meta cumplida."); }
+      }
+      pintarFantasma(s);
+      pintarRutina(s, c);
+      pintarRutaMini(s.corriendo ? distancia(s) : 0);
+
+      if (s.corriendo){
+        if (s.eventos > 0) avisosVoz(s, c, activo);
+        while (tot >= s.sigSerie){ s.serie.push(Math.round(c)); s.sigSerie += CADA_SERIE; if (s.serie.length > 1440) s.serie.shift(); }
+        if (s.eventos === 0 && tot > 3){
+          estado("Sin sensor","error");
+          aviso("El navegador no entrega datos del sensor de movimiento. Abre la página con https en Chrome, directamente (no dentro de otra app), y vuelve a pulsar Iniciar.");
+        } else if (s.eventos > 0){
+          aviso("");
+          if (activo) estado("Contando","activo"); else estado("Esperando movimiento","pausa");
+        }
+      }
+      dibujarSenal(); dibujarSerie();
+    }
+    requestAnimationFrame(refrescar);
+  }
+
+  // ---------- pantalla siempre encendida ----------
+  var bloqueo = null;
+  function mantenerPantalla(){
+    if (!("wakeLock" in navigator)) return;
+    navigator.wakeLock.request("screen").then(function(l){ bloqueo = l; }).catch(function(){});
+  }
+  document.addEventListener("visibilitychange", function(){
+    if (document.visibilityState === "visible" && S && S.corriendo) mantenerPantalla();
+  });
+
+  // ---------- historial ----------
+  function historial(){ return leer("eliptica_hist", []); }
+  function diaDe(r){ return r.fecha.slice(0, 10); }
+  function fechaLocal(d){ var p = function(n){ return (n<10?"0":"")+n; }; return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
+
+  var CAMPOS = [
+    { k:"seg",  n:"Tiempo activo", f:mmss },
+    { k:"pasos",n:"Zancadas",      f:function(v){ return String(v); } },
+    { k:"cad",  n:"Cadencia media",f:function(v){ return String(v); } },
+    { k:"cadMax",n:"Cadencia máxima",f:function(v){ return String(v); } },
+    { k:"km",   n:"Distancia (km)",f:function(v){ return v.toFixed(2); } },
+    { k:"kcal", n:"Calorías",      f:function(v){ return String(v); } },
+    { k:"reg",  n:"Regularidad (%)",f:function(v){ return String(v); } }
+  ];
+  function mejor(h, k){ var m = null; h.forEach(function(r){ if (typeof r[k] === "number" && (m === null || r[k] > m)) m = r[k]; }); return m; }
+
+  function pintarHistorial(){
+    var h = historial();
+    if (!h.length){ $("records").innerHTML = ""; $("hist").innerHTML = '<p class="nota">Aún no hay sesiones guardadas.</p>'; return; }
+    $("records").innerHTML = '<p class="nota">Récords: ' + CAMPOS.slice(0,5).map(function(c){
+      var m = mejor(h, c.k); return m === null ? "" : c.n.toLowerCase() + " " + c.f(m); }).filter(Boolean).join(" · ") + "</p>";
+    var filas = h.slice().reverse().map(function(r){
+      return "<tr><td>"+r.fecha+"</td><td>"+mmss(r.seg)+"</td><td>"+r.pasos+"</td><td>"+r.cad+"</td><td>"+
+        (typeof r.km === "number" ? r.km.toFixed(2) : "–")+"</td><td>"+r.kcal+"</td></tr>";
+    }).join("");
+    $("hist").innerHTML = "<table><thead><tr><th>Fecha</th><th>Tiempo</th><th>Zancadas</th><th>Cad.</th><th>km</th><th>kcal</th></tr></thead><tbody>"+filas+"</tbody></table>";
+  }
+
+  // ---------- rachas ----------
+  function rachas(h){
+    var dias = {}; h.forEach(function(r){ dias[diaDe(r)] = (dias[diaDe(r)] || 0) + r.seg; });
+    var hoy = new Date(); hoy.setHours(12,0,0,0);
+    var d = new Date(hoy), act = 0;
+    if (!dias[fechaLocal(d)]) d.setDate(d.getDate()-1);   // si hoy no entrenaste, la racha cuenta hasta ayer
+    while (dias[fechaLocal(d)]){ act++; d.setDate(d.getDate()-1); }
+    var claves = Object.keys(dias).sort(), mejorR = 0, cur = 0, prev = null;
+    claves.forEach(function(k){
+      var t = new Date(k + "T12:00:00");
+      cur = prev && Math.round((t - prev) / 864e5) === 1 ? cur + 1 : 1;
+      if (cur > mejorR) mejorR = cur; prev = t;
+    });
+    return { dias: dias, actual: act, mejor: mejorR };
+  }
+  function pintarRacha(h){
+    var R = rachas(h);
+    $("rachaAct").textContent = R.actual + (R.actual === 1 ? " día" : " días");
+    $("rachaMejor").textContent = R.mejor + (R.mejor === 1 ? " día" : " días");
+    var hoy = new Date(); hoy.setHours(12,0,0,0);
+    var lunes = new Date(hoy); lunes.setDate(hoy.getDate() - ((hoy.getDay()+6)%7) - 16*7);
+    var celdas = [];
+    for (var fila=0; fila<7; fila++){
+      for (var col=0; col<17; col++){
+        var d = new Date(lunes); d.setDate(lunes.getDate() + col*7 + fila);
+        if (d > hoy){ celdas.push('<i class="vacio"></i>'); continue; }
+        var seg = R.dias[fechaLocal(d)] || 0, n = seg <= 0 ? "" : seg < 900 ? "n1" : seg < 1800 ? "n2" : "n3";
+        celdas.push('<i class="' + n + '" title="' + fechaLocal(d) + (seg ? " · " + Math.round(seg/60) + " min" : "") + '"></i>');
+      }
+    }
+    $("racha").innerHTML = celdas.join("");
+  }
+
+  // ---------- logros ----------
+  var ICONOS = {
+    estrella: '<path d="M17 4l3.6 7.6 8.2 1-6 5.7 1.6 8.2L17 22.4 9.6 26.5l1.6-8.2-6-5.7 8.2-1z"/>',
+    reloj: '<circle cx="17" cy="17" r="12" fill="none" stroke-width="3"/><path d="M17 10v8l5 3" fill="none" stroke-width="3" stroke-linecap="round"/>',
+    pin: '<path d="M17 4a9 9 0 0 1 9 9c0 7-9 17-9 17S8 20 8 13a9 9 0 0 1 9-9z"/><circle cx="17" cy="13" r="3.5" fill="#1a2026"/>',
+    rayo: '<path d="M19 3L7 19h8l-2 12 12-17h-8z"/>',
+    llama: '<path d="M17 3c2 6 9 9 9 17a9 9 0 0 1-18 0c0-5 3-7 4-11 1 3 3 4 3 4s-1-5 2-10z"/>',
+    copa: '<path d="M10 5h14v6a7 7 0 0 1-14 0zM14 21h6v4h4v4H10v-4h4z"/><path d="M10 7H5c0 5 3 7 5 7M24 7h5c0 5-3 7-5 7" fill="none" stroke-width="2.5"/>',
+    fantasma: '<path d="M8 30V15a9 9 0 0 1 18 0v15l-3-3-3 3-3-3-3 3-3-3z"/><circle cx="13.5" cy="15" r="2" fill="#1a2026"/><circle cx="20.5" cy="15" r="2" fill="#1a2026"/>',
+    onda: '<path d="M3 17c3-8 5-8 7 0s4 8 7 0 4-8 7 0 4 8 7 0" fill="none" stroke-width="3" stroke-linecap="round"/>',
+    bandera: '<path d="M8 4v27" stroke-width="3"/><path d="M9 5h17l-4 6 4 6H9z"/>'
+  };
+  var LOGROS = [
+    { id:"s1",  n:"Primera sesión",       i:"estrella", ok:function(e){ return e.n >= 1; } },
+    { id:"s10", n:"10 sesiones",          i:"estrella", ok:function(e){ return e.n >= 10; } },
+    { id:"s50", n:"50 sesiones",          i:"copa",     ok:function(e){ return e.n >= 50; } },
+    { id:"m30", n:"30 min seguidos",      i:"reloj",    ok:function(e){ return e.maxSeg >= 1800; } },
+    { id:"m60", n:"1 hora seguida",       i:"reloj",    ok:function(e){ return e.maxSeg >= 3600; } },
+    { id:"h1",  n:"1 hora acumulada",     i:"reloj",    ok:function(e){ return e.seg >= 3600; } },
+    { id:"h10", n:"10 horas acumuladas",  i:"copa",     ok:function(e){ return e.seg >= 36000; } },
+    { id:"k10", n:"10 km",                i:"pin",      ok:function(e){ return e.km >= 10; } },
+    { id:"k100",n:"100 km",               i:"pin",      ok:function(e){ return e.km >= 100; } },
+    { id:"k500",n:"500 km",               i:"copa",     ok:function(e){ return e.km >= 500; } },
+    { id:"c170",n:"Cadencia 170",         i:"rayo",     ok:function(e){ return e.maxCad >= 170; } },
+    { id:"r90", n:"Ritmo de reloj (90 %)",i:"onda",     ok:function(e){ return e.maxReg >= 90; } },
+    { id:"d3",  n:"3 días seguidos",      i:"llama",    ok:function(e){ return e.racha >= 3; } },
+    { id:"d7",  n:"7 días seguidos",      i:"llama",    ok:function(e){ return e.racha >= 7; } },
+    { id:"fan", n:"Venciste al fantasma", i:"fantasma", ok:function(e){ return e.fan >= 1; } },
+    { id:"rut", n:"Rutina al 80 %",       i:"rayo",     ok:function(e){ return e.rut >= 1; } },
+    { id:"ruta",n:"Ruta completada",      i:"bandera",  ok:function(e){ return e.rutas >= 1; } },
+    { id:"ruta3",n:"3 rutas completadas", i:"bandera",  ok:function(e){ return e.rutas >= 3; } }
+  ];
+  function estadisticas(h){
+    var e = { n: h.length, seg: 0, km: 0, maxSeg: 0, maxCad: 0, maxReg: 0, fan: 0, rut: 0,
+      racha: rachas(h).mejor, rutas: (leer("eliptica_ruta", {}).completadas || []).length };
+    h.forEach(function(r){
+      e.seg += r.seg || 0; e.km += r.km || 0;
+      e.maxSeg = Math.max(e.maxSeg, r.seg || 0); e.maxCad = Math.max(e.maxCad, r.cadMax || 0); e.maxReg = Math.max(e.maxReg, r.reg || 0);
+      if (r.venceFan) e.fan++;
+      if (r.rutina && r.cumple >= 80) e.rut++;
+    });
+    return e;
+  }
+  function logrosObtenidos(){ var e = estadisticas(historial()); return LOGROS.filter(function(l){ return l.ok(e); }).map(function(l){ return l.id; }); }
+  var nuevosLogros = [];
+  function pintarLogros(){
+    var tiene = logrosObtenidos();
+    $("logCuenta").textContent = tiene.length + " de " + LOGROS.length;
+    $("logros").innerHTML = LOGROS.map(function(l){
+      var si = tiene.indexOf(l.id) >= 0, nuevo = nuevosLogros.indexOf(l.id) >= 0;
+      return '<div class="logro' + (si ? " si" : "") + (nuevo ? " nuevo" : "") + '"><svg viewBox="0 0 34 34" fill="' + (si ? "#f2b23a" : "#3a444e") +
+        '" stroke="' + (si ? "#f2b23a" : "#3a444e") + '" aria-hidden="true">' + ICONOS[l.i] + "</svg>" + l.n + "</div>";
+    }).join("");
+  }
+
+  // ---------- progreso semanal / mensual ----------
+  var ctx3 = $("progGraf").getContext("2d");
+  function pintarGrafico(h){
+    var porMes = $("progPeriodo").value === "mes", met = $("progMetrica").value;
+    var hoy = new Date(); hoy.setHours(12,0,0,0);
+    var cubos = [], i;
+    for (i=11; i>=0; i--){
+      var ini, fin, etq;
+      if (porMes){ ini = new Date(hoy.getFullYear(), hoy.getMonth()-i, 1); fin = new Date(hoy.getFullYear(), hoy.getMonth()-i+1, 1);
+        etq = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"][ini.getMonth()]; }
+      else { ini = new Date(hoy); ini.setDate(hoy.getDate() - ((hoy.getDay()+6)%7) - i*7); ini.setHours(0,0,0,0);
+        fin = new Date(ini); fin.setDate(ini.getDate()+7); etq = ini.getDate() + "/" + (ini.getMonth()+1); }
+      cubos.push({ ini: fechaLocal(ini), fin: fechaLocal(fin), etq: etq, seg: 0, km: 0, pasos: 0, n: 0 });
+    }
+    h.forEach(function(r){
+      var d = diaDe(r);
+      for (var j=0;j<cubos.length;j++) if (d >= cubos[j].ini && d < cubos[j].fin){ var c = cubos[j]; c.seg += r.seg; c.km += r.km || 0; c.pasos += r.pasos; c.n++; }
+    });
+    var val = cubos.map(function(c){ return met === "min" ? c.seg/60 : met === "km" ? c.km : met === "ses" ? c.n : (c.seg ? c.pasos/c.seg*60 : 0); });
+    var cv = $("progGraf"), w = cv.width, hh = cv.height, izq = 34, aba = 20, arr = 8;
+    ctx3.clearRect(0,0,w,hh);
+    var max = Math.max.apply(null, val);
+    var paso = max <= 0 ? 1 : Math.pow(10, Math.floor(Math.log10(max)));
+    if (max / paso > 5) paso *= 2; else if (max / paso < 2) paso /= 2;
+    if (met === "ses") paso = Math.max(1, Math.round(paso));
+    var tope = max <= 0 ? paso*4 : Math.ceil(max / paso) * paso;
+    var Y = function(v){ return hh - aba - v/tope*(hh-aba-arr); };
+    ctx3.font = "11px sans-serif"; ctx3.fillStyle = "#8d9aa6"; ctx3.textBaseline = "middle"; ctx3.textAlign = "right";
+    for (var v=0; v<=tope+1e-9; v+=paso){
+      ctx3.strokeStyle = "#2c353e"; ctx3.lineWidth = 1; ctx3.beginPath(); ctx3.moveTo(izq, Y(v)); ctx3.lineTo(w, Y(v)); ctx3.stroke();
+      ctx3.fillText(paso < 1 ? v.toFixed(1) : String(Math.round(v)), izq-5, Y(v));
+    }
+    var bw = (w-izq)/12;
+    ctx3.textAlign = "center"; ctx3.textBaseline = "alphabetic";
+    for (i=0;i<12;i++){
+      var x = izq + i*bw;
+      if (val[i] > 0){
+        ctx3.fillStyle = i === 11 ? "#f2b23a" : "#8a6a28";
+        var y = Y(val[i]); ctx3.beginPath();
+        if (ctx3.roundRect) ctx3.roundRect(x+bw*.18, y, bw*.64, hh-aba-y, [3,3,0,0]); else ctx3.rect(x+bw*.18, y, bw*.64, hh-aba-y);
+        ctx3.fill();
+      }
+      if (i % 2 === 1 || porMes){ ctx3.fillStyle = "#8d9aa6"; ctx3.fillText(cubos[i].etq, x+bw/2, hh-5); }
+    }
+    var tot = estadisticas(h);
+    $("progTot").textContent = "En total: " + tot.n + (tot.n === 1 ? " sesión, " : " sesiones, ") + Math.round(tot.seg/60) + " min activos, " + tot.km.toFixed(1) + " km equivalentes.";
+  }
+
+  // ---------- ruta en Progreso: mapa real (si hay internet) o esquema ----------
+  var mapa = null, capaRuta = null;
+  function opcionesRuta(){
+    var est = rutaActual().est, sel = $("rutaSel"), html = "";
+    Object.keys(RUTAS).forEach(function(k){
+      var r = RUTAS[k];
+      html += '<option value="' + k + '">' + r.nombre + " · " + kmTxt(largoRuta(r)) + " km" + ((est.completadas || []).indexOf(k) >= 0 ? " ✓" : "") + "</option>";
+    });
+    var p = rutaPropia();
+    html += '<option value="propia">' + (p ? p.nombre + " · " + kmTxt(largoRuta(p)) + " km" : "Crear mi propia ruta…") + "</option>";
+    sel.innerHTML = html; sel.value = est.id;
+  }
+  function pintarRutaGrande(){
+    var ra = rutaActual(), r = ra.ruta, L = largoRuta(r);
+    var vivo = S && S.corriendo ? distancia(S) : 0;
+    var km = Math.min(L, kmEnRuta(ra.est, vivo)), pct = km / L;
+    $("rpTxt").textContent = kmTxt(km) + " de " + kmTxt(L) + " km";
+    $("rpPct").textContent = Math.floor(pct*100) + " %";
+    $("rpBarra").firstElementChild.style.width = (pct*100) + "%";
+    $("rpBarra").className = "barra" + (pct >= 1 ? " hecha" : "");
+    var n = siguienteParada(r, km);
+    $("rpSig").textContent = n < 0 ? "¡Llegaste a " + r.paradas[r.paradas.length-1][0] + "!" :
+      "Próxima parada: " + r.paradas[n][0] + " en " + kmTxt(r.paradas[n][1] - km) + " km. Al ritmo de tu última semana llegarías al final en " + diasRestantes(L - km) + ".";
+    $("rutaPropia").hidden = ra.est.id !== "propia" && $("rutaSel").value !== "propia";
+
+    var conMapa = typeof window.L !== "undefined" && tieneCoords(r) && navigator.onLine !== false;
+    $("mapa").hidden = !conMapa; $("rutaEsquema").hidden = conMapa;
+    if (conMapa) dibujarMapa(r, km); else dibujarEsquema(r, km);
+  }
+  function diasRestantes(kmFalta){
+    var h = historial(), hace7 = new Date(); hace7.setDate(hace7.getDate()-7);
+    var lim = fechaLocal(hace7), km7 = 0;
+    h.forEach(function(r){ if (diaDe(r) > lim) km7 += r.km || 0; });
+    if (km7 <= 0) return "— (entrena unos días para estimarlo)";
+    var d = Math.ceil(kmFalta / (km7/7));
+    return d <= 1 ? "1 día" : d + " días";
+  }
+  function dibujarMapa(r, km){
+    var Lf = window.L;
+    if (!mapa){
+      mapa = Lf.map("mapa", { zoomControl: true, attributionControl: true });
+      Lf.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 17, attribution: "© OpenStreetMap" }).addTo(mapa);
+    }
+    setTimeout(function(){ mapa.invalidateSize(); }, 50);
+    if (capaRuta) capaRuta.remove();
+    capaRuta = Lf.layerGroup().addTo(mapa);
+    var todos = r.paradas.map(function(p){ return [p[2], p[3]]; });
+    var pos = posicion(r, km), hechos = [];
+    r.paradas.forEach(function(p){ if (p[1] <= km) hechos.push([p[2], p[3]]); });
+    hechos.push(pos);
+    Lf.polyline(todos, { color: "#8d9aa6", weight: 4, opacity: .7, dashArray: "6 8" }).addTo(capaRuta);
+    Lf.polyline(hechos, { color: "#f2b23a", weight: 5 }).addTo(capaRuta);
+    r.paradas.forEach(function(p){
+      Lf.circleMarker([p[2], p[3]], { radius: 5, color: p[1] <= km ? "#f2b23a" : "#8d9aa6", fillColor: p[1] <= km ? "#f2b23a" : "#1a2026", fillOpacity: 1, weight: 2 })
+        .bindTooltip(p[0] + " · km " + p[1]).addTo(capaRuta);
+    });
+    Lf.circleMarker(pos, { radius: 9, color: "#101418", weight: 3, fillColor: "#58c98b", fillOpacity: 1 }).bindTooltip("Estás aquí · km " + kmTxt(km)).addTo(capaRuta);
+    mapa.fitBounds(todos, { padding: [24, 24] });
+  }
+  function dibujarEsquema(r, km){     // sin internet o ruta sin coordenadas: línea con paradas
+    var cv = $("rutaEsquema"), c = cv.getContext("2d"), w = cv.width, h = cv.height, L = largoRuta(r);
+    c.clearRect(0,0,w,h);
+    var n = r.paradas.length, margen = 16, alto = (h - 2*margen) / Math.max(1, n-1);
+    var X = function(i){ return i % 2 ? w*0.62 : w*0.38; };
+    c.lineWidth = 4; c.lineCap = "round";
+    for (var i=1;i<n;i++){
+      var a = r.paradas[i-1], b = r.paradas[i], y0 = margen + (i-1)*alto, y1 = margen + i*alto;
+      c.strokeStyle = "#2c353e"; c.beginPath(); c.moveTo(X(i-1), y0); c.lineTo(X(i), y1); c.stroke();
+      if (km > a[1]){
+        var f = Math.min(1, (km - a[1]) / ((b[1]-a[1]) || 1));
+        c.strokeStyle = "#f2b23a"; c.beginPath(); c.moveTo(X(i-1), y0); c.lineTo(X(i-1) + (X(i)-X(i-1))*f, y0 + (y1-y0)*f); c.stroke();
+        if (f < 1){ c.fillStyle = "#58c98b"; c.beginPath(); c.arc(X(i-1) + (X(i)-X(i-1))*f, y0 + (y1-y0)*f, 7, 0, 7); c.fill(); }
+      }
+    }
+    c.font = "13px sans-serif"; c.textBaseline = "middle";
+    r.paradas.forEach(function(p, i){
+      var x = X(i), y = margen + i*alto, ok = p[1] <= km;
+      c.fillStyle = ok ? "#f2b23a" : "#1a2026"; c.strokeStyle = ok ? "#f2b23a" : "#8d9aa6"; c.lineWidth = 2;
+      c.beginPath(); c.arc(x, y, 5, 0, 7); c.fill(); c.stroke();
+      c.fillStyle = ok ? "#e9eef2" : "#8d9aa6"; c.textAlign = i % 2 ? "left" : "right";
+      c.fillText(p[0] + " · " + kmTxt(p[1]), x + (i % 2 ? 12 : -12), y);
+    });
+  }
+  $("rutaSel").addEventListener("change", function(){
+    var id = $("rutaSel").value;
+    if (id === "propia" && !rutaPropia()){ $("rutaPropia").hidden = false; return; }
+    cambiarRuta(id);
+  });
+  function cambiarRuta(id){
+    var est = rutaActual().est;
+    est.id = id; est.desde = historial().length;
+    guardar("eliptica_ruta", est);
+    rmParadasHechas = "";
+    if (S && S.corriendo){ S.rutaKm0 = -distancia(S); S.paradaVoz = 1; }   // la sesión en curso cuenta desde ahora
+    pintarRutaGrande(); pintarRutaMini(0);
+  }
+  $("btnRutaPropia").addEventListener("click", function(){
+    var lineas = $("rpParadas").value.split(/\n/).map(function(l){ return l.trim(); }).filter(Boolean), paradas = [], error = "";
+    lineas.forEach(function(l, i){
+      var p = l.split(",").map(function(x){ return x.trim(); });
+      var km = parseFloat(p[1]);
+      if (!p[0] || !isFinite(km)) error = "Revisa la línea " + (i+1) + ": debe ser «nombre, km».";
+      else paradas.push([p[0], km, parseFloat(p[2]), parseFloat(p[3])]);
+    });
+    paradas.sort(function(a, b){ return a[1] - b[1]; });
+    if (!error && paradas.length < 2) error = "Pon al menos dos paradas.";
+    if (!error && paradas[0][1] !== 0) error = "La primera parada debe estar en 0 km.";
+    if (error){ $("rpSig").textContent = error; return; }
+    guardar("eliptica_ruta_propia", { nombre: $("rpNombre").value.trim() || "Mi ruta", paradas: paradas });
+    opcionesRuta(); cambiarRuta("propia"); $("rutaSel").value = "propia";
+  });
+  (function(){ var p = rutaPropia(); if (p){ $("rpNombre").value = p.nombre; $("rpParadas").value = p.paradas.map(function(x){
+    return [x[0], x[1]].concat(isFinite(x[2]) ? [x[2], x[3]] : []).join(", "); }).join("\n"); } })();
+
+  $("progPeriodo").addEventListener("change", function(){ pintarGrafico(historial()); });
+  $("progMetrica").addEventListener("change", function(){ pintarGrafico(historial()); });
+
+  function pintarProgreso(){
+    var h = historial();
+    opcionesRuta(); pintarRutaGrande(); pintarRacha(h); pintarGrafico(h); pintarLogros(); pintarHistorial();
+  }
+
+  // ---------- resumen al terminar ----------
+  function pintarResumen(actual, previos, extras){
+    var ant = previos.length ? previos[previos.length-1] : null;
+    var html = "<h2>Resumen de la sesión" + (ant ? " · comparada con la anterior" : "") + "</h2>";
+    CAMPOS.forEach(function(c){
+      var v = actual[c.k]; if (typeof v !== "number") return;
+      var extra = "";
+      if (ant && typeof ant[c.k] === "number"){
+        var d = v - ant[c.k];
+        if (d !== 0){
+          var txt = c.k === "seg" ? mmss(Math.abs(d)) : c.k === "km" ? Math.abs(d).toFixed(2) : String(Math.abs(Math.round(d)));
+          extra = ' <span class="' + (d > 0 ? "sube" : "baja") + '">' + (d > 0 ? "+" : "−") + txt + "</span>";
+        }
+      }
+      var m = mejor(previos, c.k);
+      if (previos.length && m !== null && v > m && c.k !== "kcal") extra += '<span class="record">Récord</span>';
+      html += '<div class="fila"><span>' + c.n + "</span><span>" + c.f(v) + extra + "</span></div>";
+    });
+    extras.forEach(function(e){ html += '<div class="fila"><span>' + e[0] + "</span><span>" + e[1] + "</span></div>"; });
+    $("resumen").innerHTML = html; $("resumen").hidden = false;
+  }
+
+  // ---------- botones ----------
+  function arrancar(){
+    S = nuevaSesion();
+    nuevosLogros = [];
+    $("resumen").hidden = true;
+    $("rutina").disabled = true; $("fantasma").disabled = true;
+    window.addEventListener("devicemotion", alMover);
+    mantenerPantalla();
+    try{ if (!audio){ var AC = window.AudioContext || window.webkitAudioContext; if (AC) audio = new AC(); } }catch(e){}
+    try{ if (window.speechSynthesis) window.speechSynthesis.cancel(); }catch(e){}
+    // la primera frase debe salir de un toque en pantalla para que el móvil permita la voz
+    var saludo = "Sesión iniciada.";
+    if (S.rutina) saludo += " Rutina " + S.rutina.nombre + ".";
+    if (S.fantasma) saludo += " Compites contra tu sesión del " + S.fantasma.fecha.slice(8,10) + ".";
+    else if ($("fantasma").value) saludo += " Aún no hay sesiones para el fantasma.";
+    decir(saludo);
+    estado("Esperando movimiento","pausa");
+    $("btnIniciar").textContent = "Reiniciar";
+    $("btnTerminar").disabled = false;
+    verPestana("Entrenar");
+  }
+  $("btnIniciar").addEventListener("click", function(){
+    if (typeof DeviceMotionEvent === "undefined"){ estado("Sin sensor","error"); aviso("Este navegador no tiene acceso al sensor de movimiento."); return; }
+    if (typeof DeviceMotionEvent.requestPermission === "function"){
+      DeviceMotionEvent.requestPermission().then(function(r){
+        if (r === "granted") arrancar(); else { estado("Sin permiso","error"); aviso("Hace falta permitir el acceso al sensor de movimiento."); }
+      }).catch(function(){ estado("Sin permiso","error"); });
+    } else arrancar();
+  });
+
+  function terminar(){
+    if (!S) return;
+    S.corriendo = false; S.fin = Date.now();
+    window.removeEventListener("devicemotion", alMover);
+    if (bloqueo){ bloqueo.release().catch(function(){}); bloqueo = null; }
+    document.body.removeAttribute("data-zona");
+    $("rutina").disabled = false; $("fantasma").disabled = false;
+    if (S.pasos > 0){
+      var d = new Date(S.inicio), p = function(n){ return (n<10?"0":"")+n; }, r = regularidad(S);
+      var reg = { fecha: fechaLocal(d)+" "+p(d.getHours())+":"+p(d.getMinutes()),
+        seg: Math.round(S.activo), total: Math.round(totalSeg(S)), pausas: S.pausas, pasos: S.pasos,
+        cad: Math.round(cadMedia(S)), cadMax: Math.round(S.cadMax), km: Math.round(distancia(S)*100)/100,
+        kcal: Math.round(S.kcal), zonas: S.zonas.map(Math.round), curva: S.curva.concat([S.pasos]) };
+      if (r !== null) reg.reg = Math.round(r);
+      if (S.fcN){ reg.fcMed = Math.round(S.fcSum/S.fcN); reg.fcMax = S.fcMax; }
+      var extras = [];
+      if (S.rutina){
+        reg.rutina = S.rutina.id; reg.cumple = Math.round(cumplimiento(S.rutina)); reg.rutinaHecha = S.rutina.hecha;
+        if (!S.rutina.hecha) reg.cumple = Math.min(reg.cumple, Math.round(reg.cumple * S.activo / S.rutina.total));   // rutina a medias cuenta menos
+        extras.push(["Rutina " + S.rutina.nombre, (S.rutina.hecha ? "completa · " : "a medias · ") + reg.cumple + " % en ritmo"]);
+      }
+      if (S.fantasma){
+        if (S.fanFin !== null){
+          var fin = S.fanFin - S.fantasma.pasos;
+          reg.venceFan = fin > 0;
+          extras.push(["Contra el fantasma", fin > 0 ? '<span class="sube">Ganaste por ' + fin + "</span>" : fin === 0 ? "Empate" : '<span class="baja">Perdiste por ' + (-fin) + "</span>"]);
+        } else {
+          var dif = Math.round(S.pasos - pasosFantasma(S.fantasma, S.activo));
+          extras.push(["Contra el fantasma", (dif >= 0 ? "+" : "−") + Math.abs(dif) + " zancadas (paraste antes de " + mmss(S.fantasma.seg) + ")"]);
+        }
+      }
+      var antes = logrosObtenidos(), h = historial();
+      pintarResumen(reg, h, extras);
+      h.push(reg); guardar("eliptica_hist", h);
+      // ¿completó la ruta con esta sesión?
+      var ra = rutaActual();
+      if (kmEnRuta(ra.est, 0) >= largoRuta(ra.ruta) && (ra.est.completadas || []).indexOf(ra.est.id) < 0){
+        ra.est.completadas = (ra.est.completadas || []).concat([ra.est.id]); guardar("eliptica_ruta", ra.est);
+        extras.push(["Ruta", '<span class="sube">¡' + ra.ruta.nombre + " completada!</span>"]);
+        pintarResumen(reg, h.slice(0, -1), extras);
+      }
+      nuevosLogros = logrosObtenidos().filter(function(id){ return antes.indexOf(id) < 0; });
+      var frase = "Sesión terminada. " + Math.floor(reg.seg/60) + " minutos, " + reg.pasos + " zancadas, cadencia media " + reg.cad + ", " + reg.kcal + " calorías.";
+      if (nuevosLogros.length){
+        var nombres = LOGROS.filter(function(l){ return nuevosLogros.indexOf(l.id) >= 0; }).map(function(l){ return l.n; });
+        frase += (nombres.length === 1 ? " Nuevo logro: " : " Nuevos logros: ") + nombres.join(", ") + ".";
+        $("resumen").innerHTML += '<div class="fila"><span>Logros nuevos</span><span class="sube">' + nombres.join(" · ") + "</span></div>";
+      }
+      decir(frase);
+      pintarRutaMini(0);
+      estado("Sesión guardada","activo");
+    } else estado("Listo");
+    $("btnIniciar").textContent = "Iniciar";
+    $("btnTerminar").disabled = true;
+  }
+  $("btnTerminar").addEventListener("click", terminar);
+
+  $("btnVozPrueba").addEventListener("click", function(){
+    if (!window.speechSynthesis){ $("btnVozPrueba").textContent = "Este navegador no tiene voz"; return; }
+    decir("7 minutos. Cadencia 142. 95 calorías. Vas 40 zancadas delante del fantasma.", true);
+  });
+
+  $("btnCsv").addEventListener("click", function(){
+    var h = historial(); if (!h.length) return;
+    var v = function(x){ return x === undefined || x === null ? "" : x; };
+    var csv = "fecha,seg_activos,seg_totales,pausas,zancadas,vueltas,cadencia_media,cadencia_max,km_equiv,kcal_estimadas,regularidad_pct,pulso_medio,pulso_max,seg_suave,seg_medio,seg_rapido,rutina,rutina_pct,vencio_fantasma\n" +
+      h.map(function(r){ var z = r.zonas || ["","",""];
+        return [r.fecha, r.seg, v(r.total), v(r.pausas), r.pasos, Math.floor(r.pasos/2), r.cad, v(r.cadMax), v(r.km), r.kcal, v(r.reg), v(r.fcMed), v(r.fcMax), z[0], z[1], z[2],
+          v(r.rutina), v(r.cumple), r.venceFan ? "si" : ""].join(","); }).join("\n");
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], {type:"text/csv"}));
+    a.download = "eliptica_historial.csv"; document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  var confirmarBorrado = false;
+  $("btnBorrar").addEventListener("click", function(){
+    if (!confirmarBorrado){ confirmarBorrado = true; $("btnBorrar").textContent = "Pulsa otra vez para borrar";
+      setTimeout(function(){ confirmarBorrado = false; $("btnBorrar").textContent = "Borrar historial"; }, 4000); return; }
+    guardar("eliptica_hist", []);
+    var est = rutaActual().est; est.desde = 0; est.completadas = []; guardar("eliptica_ruta", est);
+    confirmarBorrado = false; $("btnBorrar").textContent = "Borrar historial";
+    pintarProgreso(); pintarRutaMini(0);
+  });
+
+  // expuesto solo para pruebas automáticas
+  window.__eliptica = { arrancar: arrancar, terminar: terminar, alMover: alMover, sesion: function(){ return S; },
+    regularidad: regularidad, cadMedia: cadMedia, pintarProgreso: pintarProgreso, cambiarRuta: cambiarRuta, rachas: rachas, logrosObtenidos: logrosObtenidos };
+
+  pintarRutaMini(0);
+  requestAnimationFrame(refrescar);
+})();
+</script>
+</body>
+</html>
